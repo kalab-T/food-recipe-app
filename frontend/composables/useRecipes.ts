@@ -6,7 +6,6 @@ type Recipe = {
   title: string
   image: string
   category_id: string
-  // add other fields you expect
 }
 
 type RecipeResponse = {
@@ -30,7 +29,7 @@ export const useRecipes = ({ limit, categoryIds }: UseRecipesOptions = {}) => {
             recipes(
               limit: $limit
               where: {
-                ${categoryIds && categoryIds.length > 0 ? 'category_id: { _in: $categoryIds }' : ''}
+                ${categoryIds && categoryIds.length > 0 ? 'category_id: {_in: $categoryIds}' : '{}'}
               }
               order_by: { created_at: desc }
             ) {
@@ -47,7 +46,6 @@ export const useRecipes = ({ limit, categoryIds }: UseRecipesOptions = {}) => {
         },
         fetchPolicy: 'network-only',
       })
-
       return result.data
     }
   )
