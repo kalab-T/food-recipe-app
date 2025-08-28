@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"os"
 	"time"
 
 	"github.com/gin-contrib/cors"
@@ -27,6 +28,12 @@ func main() {
 
 	port := config.BackendPort()
 
+	// Read upload directory from env or default
+	uploadDir := os.Getenv("UPLOAD_DIR")
+	if uploadDir == "" {
+		uploadDir = "./static/images"
+	}
+
 	r := gin.Default()
 
 	// ✅ CORS middleware config (allow local + Vercel frontend)
@@ -42,17 +49,15 @@ func main() {
 		MaxAge:           12 * time.Hour,
 	}))
 
-	// ✅ Serve static image files from ./static/images
-	r.Static("/images", "./static/images")
+	// ✅ Serve static image files
+	r.Static("/images", uploadDir)
 
 	// API Routes
 	r.POST("/signup", handlers.SignupHandler)
 	r.POST("/login", handlers.LoginHandler)
 
-	// ✅ Make sure uploads go into ./static/images
-	r.POST("/upload", func(c *gin.Context) {
-		upload.UploadHandler(c, "./static/images")
-	})
+	// ✅ Upload route (no extra args needed)
+	r.POST("/upload", upload.UploadHandler)
 
 	// Start server
 	log.Printf("🚀 Server running on port %s\n", port)
