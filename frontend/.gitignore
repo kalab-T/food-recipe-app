@@ -1,0 +1,25 @@
+# Nuxt / Node
+node_modules/
+.pnpm-lock.yaml
+.output/
+.nuxt/
+.nitro/
+.cache/
+dist/
+
+# Logs
+logs/
+*.log
+
+# Docker data
+docker-data/
+
+# Local env files
+.env
+.env.*
+!.env.example
+
+# IDE / Misc
+.DS_Store
+.idea/
+.fleet/

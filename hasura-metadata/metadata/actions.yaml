@@ -1,0 +1,23 @@
+actions:
+  - name: login
+    definition:
+      kind: synchronous
+      handler: http://food_go_backend:8080/login
+      forward_client_headers: true
+    permissions:
+      - role: user
+      - role: public
+  - name: signup
+    definition:
+      kind: synchronous
+      handler: http://food_go_backend:8080/signup
+      forward_client_headers: true
+    permissions:
+      - role: public
+custom_types:
+  enums: []
+  input_objects: []
+  objects:
+    - name: SignupResponse
+    - name: LoginResponse
+  scalars: []

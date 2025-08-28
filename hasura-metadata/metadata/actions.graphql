@@ -1,0 +1,27 @@
+type Mutation {
+  login(
+    email: String!
+    password: String!
+  ): LoginResponse
+}
+
+type Mutation {
+  signup(
+    name: String!
+    email: String!
+    password: String!
+  ): SignupResponse!
+}
+
+type SignupResponse {
+  token: String!
+  user_id: uuid!
+}
+
+type LoginResponse {
+  user_id: uuid!
+  name: String!
+  email: String!
+  token: String!
+}
+

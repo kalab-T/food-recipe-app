@@ -1,0 +1,23 @@
+{
+  "extends": "./.nuxt/tsconfig.json",
+  "compilerOptions": {
+    "types": [
+      "@nuxt/schema",
+      "@vue/runtime-core",
+      "@types/node",
+      "@vue/apollo-composable"
+    ],
+    "strict": true,
+    "moduleResolution": "node",
+    "esModuleInterop": true
+  },
+  "include": [
+    "types",
+    "nuxt.config.ts",
+    "components/**/*.vue",
+    "pages/**/*.vue",
+    "plugins/**/*.ts",
+    "composables/**/*.ts",
+    "middleware/**/*.ts"
+  ]
+}

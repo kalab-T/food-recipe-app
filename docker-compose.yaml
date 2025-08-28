@@ -1,0 +1,60 @@
+version: '3.7'
+
+services:
+  postgres:
+    image: postgres:latest
+    restart: always
+    container_name: food_postgres
+    environment:
+      POSTGRES_USER: myuser
+      POSTGRES_PASSWORD: mypass
+      POSTGRES_DB: fooddb
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - food_network
+
+  hasura:
+    image: hasura/graphql-engine:latest
+    restart: always
+    container_name: food_hasura
+    ports:
+      - "8081:8080"  # host:container
+    depends_on:
+      - postgres
+    environment:
+      HASURA_GRAPHQL_DATABASE_URL: postgres://myuser:mypass@postgres:5432/fooddb
+      HASURA_GRAPHQL_ENABLE_CONSOLE: "true"
+      HASURA_GRAPHQL_DEV_MODE: "true"
+      HASURA_GRAPHQL_ADMIN_SECRET: adminsecret
+      HASURA_GRAPHQL_UNAUTHORIZED_ROLE: public
+      HASURA_GRAPHQL_JWT_SECRET: '{"type":"HS256", "key":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}'
+    networks:
+      - food_network
+
+  go-backend:
+    build:
+      context: ./backend/go-app
+      dockerfile: Dockerfile
+    container_name: food_go_backend
+    ports:
+      - "8080:8080"
+    networks:
+      - food_network
+    environment:
+      HASURA_URL: http://hasura:8080/v1/graphql
+      HASURA_ADMIN_SECRET: adminsecret
+      HASURA_JWT_SECRET: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+      PORT: "8080"
+    depends_on:
+      - postgres
+      - hasura
+    volumes:
+      - ./backend/go-app/static/images:/app/static/images
+
+volumes:
+  postgres_data:
+
+networks:
+  food_network:
+    driver: bridge

@@ -1,0 +1,41 @@
+.
+├── backend
+│   ├── genqlient
+│   └── go-app
+├── docker-compose.yaml
+├── docker-data
+│   └── postgres
+├── frontend
+│   ├── README.md
+│   ├── app.vue
+│   ├── assets
+│   ├── backup.sql
+│   ├── components
+│   ├── composables
+│   ├── graphql
+│   ├── layouts
+│   ├── middleware
+│   ├── nuxt.config.ts
+│   ├── package.json
+│   ├── pages
+│   ├── plugins
+│   ├── pnpm-lock.yaml
+│   ├── public
+│   ├── server
+│   ├── static
+│   ├── stores
+│   ├── tailwind.config.js
+│   ├── tsconfig.json
+│   ├── types
+│   └── utils
+├── go1.23.9.linux-amd64.tar.gz
+├── hasura-metadata
+│   ├── config.yaml
+│   ├── metadata
+│   ├── migrations
+│   └── seeds
+├── package.json
+├── pnpm-lock.yaml
+└── project-structure.txt
+
+25 directories, 14 files

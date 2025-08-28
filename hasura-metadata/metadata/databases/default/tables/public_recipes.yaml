@@ -1,0 +1,127 @@
+table:
+  name: recipes
+  schema: public
+object_relationships:
+  - name: user
+    using:
+      foreign_key_constraint_on: user_id
+array_relationships:
+  - name: bookmarks
+    using:
+      foreign_key_constraint_on:
+        column: recipe_id
+        table:
+          name: bookmarks
+          schema: public
+  - name: comments
+    using:
+      foreign_key_constraint_on:
+        column: recipe_id
+        table:
+          name: comments
+          schema: public
+  - name: ingredients
+    using:
+      foreign_key_constraint_on:
+        column: recipe_id
+        table:
+          name: ingredients
+          schema: public
+  - name: likes
+    using:
+      foreign_key_constraint_on:
+        column: recipe_id
+        table:
+          name: likes
+          schema: public
+  - name: media
+    using:
+      foreign_key_constraint_on:
+        column: recipe_id
+        table:
+          name: media
+          schema: public
+  - name: ratings
+    using:
+      foreign_key_constraint_on:
+        column: recipe_id
+        table:
+          name: ratings
+          schema: public
+  - name: recipe_categories
+    using:
+      foreign_key_constraint_on:
+        column: recipe_id
+        table:
+          name: recipe_categories
+          schema: public
+  - name: steps
+    using:
+      foreign_key_constraint_on:
+        column: recipe_id
+        table:
+          name: steps
+          schema: public
+insert_permissions:
+  - role: user
+    permission:
+      check:
+        user_id:
+          _eq: X-Hasura-User-Id
+      set:
+        user_id: x-hasura-user-id
+      columns:
+        - description
+        - image
+        - prep_time
+        - tags
+        - title
+    comment: ""
+select_permissions:
+  - role: public
+    permission:
+      columns:
+        - created_at
+        - description
+        - id
+        - image
+        - title
+        - updated_at
+        - user_id
+      filter: {}
+      allow_aggregations: true
+    comment: ""
+  - role: user
+    permission:
+      columns:
+        - created_at
+        - description
+        - id
+        - image
+        - title
+        - updated_at
+        - user_id
+      filter: {}
+      allow_aggregations: true
+    comment: ""
+update_permissions:
+  - role: user
+    permission:
+      columns:
+        - description
+        - image
+        - prep_time
+        - title
+        - updated_at
+      filter:
+        user_id:
+          _eq: X-Hasura-User-Id
+      check: null
+    comment: ""
+delete_permissions:
+  - role: user
+    permission:
+      filter:
+        user_id:
+          _eq: X-Hasura-User-Id
+    comment: ""
