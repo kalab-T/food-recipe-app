@@ -6,7 +6,6 @@ type Recipe = {
   title: string
   image: string
   category_id: string
-  // add other fields you expect
 }
 
 type RecipeResponse = {
@@ -24,18 +23,12 @@ export const useRecipes = ({ limit, categoryIds }: UseRecipesOptions = {}) => {
   const { data, pending, error, refresh } = useAsyncData<RecipeResponse>(
     'recipes',
     async () => {
-      // Build dynamic "where" clause
-      const whereClause =
-        categoryIds && categoryIds.length > 0
-          ? `{ category_id: { _in: $categoryIds } }`
-          : `{}`
-
       const result = await $publicApollo.query({
         query: gql`
           query GetRecipes($limit: Int, $categoryIds: [uuid!]) {
             recipes(
               limit: $limit
-              where: ${whereClause}
+              where: { category_id: { _in: $categoryIds } }
               order_by: { created_at: desc }
             ) {
               id
@@ -47,7 +40,7 @@ export const useRecipes = ({ limit, categoryIds }: UseRecipesOptions = {}) => {
         `,
         variables: {
           limit,
-          categoryIds: categoryIds && categoryIds.length > 0 ? categoryIds : undefined,
+          categoryIds: categoryIds && categoryIds.length > 0 ? categoryIds : null,
         },
         fetchPolicy: 'network-only',
       })
