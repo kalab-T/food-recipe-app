@@ -115,20 +115,17 @@ func SignupHandler(c *gin.Context) {
 	}
 
 	if len(result.Errors) > 0 {
-		log.Printf("❌ Hasura errors: %+v", result.Errors)
 		errorMsg := result.Errors[0].Message
 		if strings.Contains(strings.ToLower(errorMsg), "duplicate") || strings.Contains(strings.ToLower(errorMsg), "already exists") {
 			errorMsg = "Email already registered"
 		}
-		c.JSON(http.StatusConflict, gin.H{
-			"message": errorMsg,
-		})
+		c.JSON(http.StatusConflict, gin.H{"message": errorMsg})
 		return
 	}
 
 	user := result.Data.InsertUser
 
-	// 5. Generate JWT using jwt.go
+	// 5. Generate JWT
 	token, err := auth.GenerateJWT(user.ID)
 	if err != nil {
 		log.Printf("❌ Failed to generate token: %v", err)
