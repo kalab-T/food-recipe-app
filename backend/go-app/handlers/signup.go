@@ -7,7 +7,6 @@ import (
 	"log"
 	"net/http"
 	"strings"
-	"time"
 
 	"go-app/auth"
 	"go-app/config"
@@ -129,8 +128,8 @@ func SignupHandler(c *gin.Context) {
 
 	user := result.Data.InsertUser
 
-	// 5. Generate JWT with Hasura claims
-	token, err := auth.GenerateJWTWithHasuraClaims(user.ID)
+	// 5. Generate JWT using jwt.go
+	token, err := auth.GenerateJWT(user.ID)
 	if err != nil {
 		log.Printf("❌ Failed to generate token: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "Could not generate token"})
