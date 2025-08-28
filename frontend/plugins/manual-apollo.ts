@@ -19,44 +19,47 @@ export default defineNuxtPlugin((nuxtApp) => {
     uri: config.public.hasuraUrl as string,
   })
 
-  // Auth middleware: attach JWT if present, otherwise use public role
+  // Auth middleware
   const authMiddleware = new ApolloLink((operation, forward) => {
-    let headers: Record<string, string> = {}
-    if (process.client) {
-      const token = localStorage.getItem('token')
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`
-      } else {
-        headers['x-hasura-role'] = 'public'
-      }
+    const token = process.client ? localStorage.getItem('token') : null
+    const headers: Record<string, string> = {}
+
+    if (token && isValidJwt(token)) {
+      headers['Authorization'] = `Bearer ${token}`
     } else {
       headers['x-hasura-role'] = 'public'
+      if (process.client) localStorage.removeItem('token')
     }
+
     operation.setContext({ headers })
     return forward(operation)
   })
 
-  // GraphQL subscriptions (client-side only)
-  const wsLink =
-    process.client &&
-    new GraphQLWsLink(
-      createClient({
-        url: config.public.hasuraWsUrl as string,
-        connectionParams: () => {
-          const token = localStorage.getItem('token')
-          return token ? { Authorization: `Bearer ${token}` } : { 'x-hasura-role': 'public' }
-        },
-        retryAttempts: 5,
-      })
-    )
+  // graphql-ws client for subscriptions
+  const wsLink = process.client
+    ? new GraphQLWsLink(
+        createClient({
+          url: config.public.hasuraWsUrl as string,
+          connectionParams: () => {
+            const token = localStorage.getItem('token')
+            return token && isValidJwt(token)
+              ? { Authorization: `Bearer ${token}` }
+              : { 'x-hasura-role': 'public' }
+          },
+          retryAttempts: 5,
+        })
+      )
+    : null
 
-  // Split link for subscriptions
   const link =
     process.client && wsLink
       ? split(
           ({ query }) => {
             const def = getMainDefinition(query)
-            return def.kind === 'OperationDefinition' && def.operation === 'subscription'
+            return (
+              def.kind === 'OperationDefinition' &&
+              def.operation === 'subscription'
+            )
           },
           wsLink,
           concat(authMiddleware, httpLink)
@@ -68,14 +71,24 @@ export default defineNuxtPlugin((nuxtApp) => {
     cache: new InMemoryCache(),
   })
 
-  // Provide Apollo client globally
-  nuxtApp.provide(DefaultApolloClient, apolloClient)
+  nuxtApp.vueApp.provide(DefaultApolloClient, apolloClient)
   nuxtApp.provide('publicApollo', apolloClient)
 
   return {
     provide: {
       apolloClient,
-      publicApollo: apolloClient,
     },
   }
 })
+
+function isValidJwt(token: string | null): boolean {
+  if (!token) return false
+  try {
+    const [, payloadBase64] = token.split('.')
+    const payload = JSON.parse(atob(payloadBase64))
+    const now = Math.floor(Date.now() / 1000)
+    return payload.exp && payload.exp > now
+  } catch {
+    return false
+  }
+}
