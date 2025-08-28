@@ -15,12 +15,12 @@ import { GraphQLWsLink } from '@apollo/client/link/subscriptions'
 export default defineNuxtPlugin((nuxtApp) => {
   const config = useRuntimeConfig()
 
-  // HTTP link for queries and mutations
-  const httpLink = new HttpLink({
-    uri: config.public.hasuraUrl as string, // deployed Hasura URL
-  })
+  // -------------------
+  // HTTP links
+  // -------------------
+  const httpLink = new HttpLink({ uri: config.public.hasuraUrl as string })
 
-  // Auth middleware to attach JWT
+  // Auth middleware: only attach JWT if it exists and is valid
   const authMiddleware = new ApolloLink((operation, forward) => {
     const token = process.client ? localStorage.getItem('token') : null
     const headers: Record<string, string> = {}
@@ -28,7 +28,7 @@ export default defineNuxtPlugin((nuxtApp) => {
     if (token && isValidJwt(token)) {
       headers['Authorization'] = `Bearer ${token}`
     } else {
-      headers['x-hasura-role'] = 'public' // fallback role
+      headers['x-hasura-role'] = 'public'
       if (process.client) localStorage.removeItem('token')
     }
 
@@ -36,7 +36,9 @@ export default defineNuxtPlugin((nuxtApp) => {
     return forward(operation)
   })
 
+  // -------------------
   // WebSocket link for subscriptions
+  // -------------------
   const wsLink =
     process.client &&
     new GraphQLWsLink(
@@ -52,7 +54,9 @@ export default defineNuxtPlugin((nuxtApp) => {
       })
     )
 
-  // Choose link depending on query type
+  // -------------------
+  // Split link: subscriptions vs queries/mutations
+  // -------------------
   const link =
     process.client && wsLink
       ? split(
@@ -65,23 +69,39 @@ export default defineNuxtPlugin((nuxtApp) => {
         )
       : concat(authMiddleware, httpLink)
 
-  const apolloClient = new ApolloClient({
+  // -------------------
+  // Apollo clients
+  // -------------------
+  const authApolloClient = new ApolloClient({
     link,
     cache: new InMemoryCache(),
   })
 
-  // Provide Apollo client to Nuxt app
-  nuxtApp.vueApp.provide(DefaultApolloClient, apolloClient)
-  nuxtApp.provide('publicApollo', apolloClient)
+  // Public client: always force public role
+  const publicApolloClient = new ApolloClient({
+    link: new ApolloLink((operation, forward) => {
+      operation.setContext({ headers: { 'x-hasura-role': 'public' } })
+      return forward(operation)
+    }).concat(httpLink),
+    cache: new InMemoryCache(),
+  })
+
+  // Provide both clients
+  nuxtApp.provide('authApollo', authApolloClient)
+  nuxtApp.provide('publicApollo', publicApolloClient)
+  nuxtApp.vueApp.provide(DefaultApolloClient, authApolloClient)
 
   return {
     provide: {
-      apolloClient,
+      authApollo: authApolloClient,
+      publicApollo: publicApolloClient,
     },
   }
 })
 
-// Simple JWT validation
+// -------------------
+// JWT validator
+// -------------------
 function isValidJwt(token: string | null): boolean {
   if (!token) return false
   try {
