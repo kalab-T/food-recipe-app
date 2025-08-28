@@ -7,12 +7,13 @@ import (
 	"log"
 	"net/http"
 	"strings"
-
-	"github.com/gin-gonic/gin"
-	"golang.org/x/crypto/bcrypt"
+	"time"
 
 	"go-app/auth"
 	"go-app/config"
+
+	"github.com/gin-gonic/gin"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type SignupRequest struct {
@@ -29,7 +30,7 @@ func SignupHandler(c *gin.Context) {
 		return
 	}
 
-	// 2. Parse and validate input
+	// 2. Parse input
 	var payload struct {
 		Input SignupRequest `json:"input"`
 	}
@@ -43,7 +44,7 @@ func SignupHandler(c *gin.Context) {
 	input.Email = strings.ToLower(strings.TrimSpace(input.Email))
 	input.Password = strings.TrimSpace(input.Password)
 
-	// 3. Password hashing
+	// 3. Hash password
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(input.Password), 12)
 	if err != nil {
 		log.Printf("❌ Password hashing failed: %v", err)
@@ -75,7 +76,6 @@ func SignupHandler(c *gin.Context) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("x-hasura-admin-secret", config.HasuraAdminSecret())
 
-	// 5. Execute request
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -85,7 +85,6 @@ func SignupHandler(c *gin.Context) {
 	}
 	defer resp.Body.Close()
 
-	// 6. Handle response
 	bodyBytes, _ := io.ReadAll(resp.Body)
 	log.Printf("🔍 Hasura signup response: %s", string(bodyBytes))
 
@@ -128,19 +127,21 @@ func SignupHandler(c *gin.Context) {
 		return
 	}
 
-	// 7. Generate JWT
-	token, err := auth.GenerateJWT(result.Data.InsertUser.ID)
+	user := result.Data.InsertUser
+
+	// 5. Generate JWT with Hasura claims
+	token, err := auth.GenerateJWTWithHasuraClaims(user.ID)
 	if err != nil {
 		log.Printf("❌ Failed to generate token: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "Could not generate token"})
 		return
 	}
 
-	// 8. Success
+	// 6. Success response
 	c.JSON(http.StatusCreated, gin.H{
-		"user_id": result.Data.InsertUser.ID,
-		"name":    result.Data.InsertUser.Name,
-		"email":   result.Data.InsertUser.Email,
+		"user_id": user.ID,
+		"name":    user.Name,
+		"email":   user.Email,
 		"token":   token,
 	})
 }
