@@ -1,42 +1,94 @@
-// plugins/manual-apollo.ts
-import { ApolloClient, InMemoryCache, HttpLink } from '@apollo/client/core'
-import fetch from 'cross-fetch'
-import type { NormalizedCacheObject } from '@apollo/client/core'
-import type { NuxtApp } from '#app'
+import { defineNuxtPlugin, useRuntimeConfig } from '#imports'
+import {
+  ApolloClient,
+  InMemoryCache,
+  HttpLink,
+  ApolloLink,
+  concat,
+  split,
+} from '@apollo/client/core'
+import { getMainDefinition } from '@apollo/client/utilities'
+import { DefaultApolloClient } from '@vue/apollo-composable'
+import { createClient } from 'graphql-ws'
+import { GraphQLWsLink } from '@apollo/client/link/subscriptions'
 
-export default defineNuxtPlugin((nuxtApp: NuxtApp) => {
+export default defineNuxtPlugin((nuxtApp) => {
   const config = useRuntimeConfig()
 
-  // Prevent re-providing if plugin runs multiple times
-  if (!nuxtApp._context.provides.$publicApollo) {
-    const publicClient: ApolloClient<NormalizedCacheObject> = new ApolloClient({
-      link: new HttpLink({
-        uri: config.public.hasuraGraphqlUrl,
-        fetch,
-        headers: {
-          'x-hasura-role': 'public', // optional, fallback
-        },
-      }),
-      cache: new InMemoryCache(),
-      ssrMode: process.server,
-    })
+  const httpLink = new HttpLink({
+    uri: config.public.hasuraUrl as string,
+  })
 
-    nuxtApp.provide('$publicApollo', publicClient)
-  }
+  // Auth middleware
+  const authMiddleware = new ApolloLink((operation, forward) => {
+    const token = process.client ? localStorage.getItem('token') : null
+    const headers: Record<string, string> = {}
 
-  if (!nuxtApp._context.provides.$authApollo) {
-    const authClient: ApolloClient<NormalizedCacheObject> = new ApolloClient({
-      link: new HttpLink({
-        uri: config.public.hasuraGraphqlUrl,
-        fetch,
-        headers: {
-          Authorization: `Bearer ${process.client ? localStorage.getItem('token') || '' : ''}`,
-        },
-      }),
-      cache: new InMemoryCache(),
-      ssrMode: process.server,
-    })
+    if (token && isValidJwt(token)) {
+      headers['Authorization'] = `Bearer ${token}`
+    } else {
+      headers['x-hasura-role'] = 'public'
+      if (process.client) localStorage.removeItem('token')
+    }
 
-    nuxtApp.provide('$authApollo', authClient)
+    operation.setContext({ headers })
+    return forward(operation)
+  })
+
+  // graphql-ws client for subscriptions
+  const wsLink = process.client
+    ? new GraphQLWsLink(
+        createClient({
+          url: config.public.hasuraWsUrl as string,
+          connectionParams: () => {
+            const token = localStorage.getItem('token')
+            return token && isValidJwt(token)
+              ? { Authorization: `Bearer ${token}` }
+              : { 'x-hasura-role': 'public' }
+          },
+          retryAttempts: 5,
+        })
+      )
+    : null
+
+  const link =
+    process.client && wsLink
+      ? split(
+          ({ query }) => {
+            const def = getMainDefinition(query)
+            return (
+              def.kind === 'OperationDefinition' &&
+              def.operation === 'subscription'
+            )
+          },
+          wsLink,
+          concat(authMiddleware, httpLink)
+        )
+      : concat(authMiddleware, httpLink)
+
+  const apolloClient = new ApolloClient({
+    link,
+    cache: new InMemoryCache(),
+  })
+
+  nuxtApp.vueApp.provide(DefaultApolloClient, apolloClient)
+  nuxtApp.provide('publicApollo', apolloClient)
+
+  return {
+    provide: {
+      apolloClient,
+    },
   }
 })
+
+function isValidJwt(token: string | null): boolean {
+  if (!token) return false
+  try {
+    const [, payloadBase64] = token.split('.')
+    const payload = JSON.parse(atob(payloadBase64))
+    const now = Math.floor(Date.now() / 1000)
+    return payload.exp && payload.exp > now
+  } catch {
+    return false
+  }
+}
