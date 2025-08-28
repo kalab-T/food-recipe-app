@@ -29,9 +29,12 @@ func main() {
 
 	r := gin.Default()
 
-	// CORS middleware config
+	// ✅ CORS middleware config (allow local + Vercel frontend)
 	r.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://localhost:3000"}, // frontend origin
+		AllowOrigins: []string{
+			"http://localhost:3000",
+			"https://food-recipe-app-m7dv.vercel.app",
+		},
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "x-hasura-admin-secret"},
 		ExposeHeaders:    []string{"Content-Length"},
@@ -39,13 +42,17 @@ func main() {
 		MaxAge:           12 * time.Hour,
 	}))
 
-	// Serve static image files
+	// ✅ Serve static image files from ./static/images
 	r.Static("/images", "./static/images")
 
 	// API Routes
 	r.POST("/signup", handlers.SignupHandler)
 	r.POST("/login", handlers.LoginHandler)
-	r.POST("/upload", upload.UploadHandler)
+
+	// ✅ Make sure uploads go into ./static/images
+	r.POST("/upload", func(c *gin.Context) {
+		upload.UploadHandler(c, "./static/images")
+	})
 
 	// Start server
 	log.Printf("🚀 Server running on port %s\n", port)
