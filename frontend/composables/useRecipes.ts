@@ -21,18 +21,18 @@ export const useRecipes = ({ limit, categoryIds }: UseRecipesOptions = {}) => {
   const { $publicApollo } = useNuxtApp()
 
   const { data, pending, error, refresh } = useAsyncData<RecipeResponse>(
-    // Use a unique key depending on selected categories
-    `recipes-${categoryIds ? categoryIds.join(',') : 'all'}`,
+    'recipes',
     async () => {
-      const whereClause =
-        categoryIds && categoryIds.length > 0
-          ? { category_id: { _in: categoryIds } }
-          : {}
-
       const result = await $publicApollo.query({
         query: gql`
-          query GetRecipes($limit: Int, $where: recipes_bool_exp) {
-            recipes(limit: $limit, where: $where, order_by: { created_at: desc }) {
+          query GetRecipes($limit: Int, $categoryIds: [uuid!]) {
+            recipes(
+              limit: $limit
+              where: {
+                ${categoryIds && categoryIds.length > 0 ? 'category_id: {_in: $categoryIds}' : '{}'}
+              }
+              order_by: { created_at: desc }
+            ) {
               id
               title
               image
@@ -42,12 +42,11 @@ export const useRecipes = ({ limit, categoryIds }: UseRecipesOptions = {}) => {
         `,
         variables: {
           limit,
-          where: whereClause,
+          categoryIds: categoryIds && categoryIds.length > 0 ? categoryIds : undefined,
         },
         fetchPolicy: 'network-only',
       })
-
-      return { recipes: result.data.recipes }
+      return result.data
     }
   )
 
