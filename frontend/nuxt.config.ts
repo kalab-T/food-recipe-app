@@ -1,26 +1,30 @@
 import { defineNuxtConfig } from 'nuxt/config'
 
 export default defineNuxtConfig({
-  modules: ['@nuxtjs/color-mode'],  // <--- add this line here
+  modules: ['@nuxtjs/color-mode'],
 
   runtimeConfig: {
     public: {
+      // ✅ Use Render Hasura URL in production
       hasuraUrl:
         process.env.NUXT_PUBLIC_HASURA_URL ||
-        'http://localhost:8081/v1/graphql',
+        'https://hasura-backend-l2yi.onrender.com/v1/graphql',
+
       hasuraWsUrl:
         process.env.NUXT_PUBLIC_HASURA_WS_URL ||
-        'ws://localhost:8081/v1/graphql',
+        'wss://hasura-backend-l2yi.onrender.com/v1/graphql',
+
       hasuraAdminSecret:
         process.env.NUXT_PUBLIC_HASURA_ADMIN_SECRET || 'adminsecret',
+
+      // ✅ Use Render backend API instead of localhost
       apiBase:
-        process.env.NUXT_PUBLIC_API_BASE || 'http://localhost:8080',
+        process.env.NUXT_PUBLIC_API_BASE ||
+        'https://food-recipe-appp.onrender.com',
     },
   },
 
-  css: [
-    '~/assets/css/tailwind.css',
-  ],
+  css: ['~/assets/css/tailwind.css'],
 
   postcss: {
     plugins: {
