@@ -1,13 +1,11 @@
-// composables/useRecipes.ts
 import { gql } from 'graphql-tag'
 import { useNuxtApp, useAsyncData } from '#app'
 
-export type Recipe = {
+type Recipe = {
   id: string
   title: string
   image: string
   category_id: string
-  // Add other fields if needed
 }
 
 type RecipeResponse = {
@@ -23,18 +21,18 @@ export const useRecipes = ({ limit, categoryIds }: UseRecipesOptions = {}) => {
   const { $publicApollo } = useNuxtApp()
 
   const { data, pending, error, refresh } = useAsyncData<RecipeResponse>(
-    'recipes',
+    // Use a unique key depending on selected categories
+    `recipes-${categoryIds ? categoryIds.join(',') : 'all'}`,
     async () => {
+      const whereClause =
+        categoryIds && categoryIds.length > 0
+          ? { category_id: { _in: categoryIds } }
+          : {}
+
       const result = await $publicApollo.query({
         query: gql`
-          query GetRecipes($limit: Int, $categoryIds: [uuid!]) {
-            recipes(
-              limit: $limit
-              where: {
-                ${categoryIds && categoryIds.length > 0 ? 'category_id: {_in: $categoryIds}' : '{}'}
-              }
-              order_by: { created_at: desc }
-            ) {
+          query GetRecipes($limit: Int, $where: recipes_bool_exp) {
+            recipes(limit: $limit, where: $where, order_by: { created_at: desc }) {
               id
               title
               image
@@ -43,8 +41,8 @@ export const useRecipes = ({ limit, categoryIds }: UseRecipesOptions = {}) => {
           }
         `,
         variables: {
-          limit: limit || undefined,
-          categoryIds: categoryIds && categoryIds.length > 0 ? categoryIds : undefined,
+          limit,
+          where: whereClause,
         },
         fetchPolicy: 'network-only',
       })
