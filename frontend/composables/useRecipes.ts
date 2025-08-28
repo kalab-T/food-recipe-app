@@ -29,8 +29,8 @@ export const useRecipes = ({ limit, categoryIds }: UseRecipesOptions = {}) => {
           query GetRecipes($limit: Int, $categoryIds: [uuid!]) {
             recipes(
               limit: $limit
-              where: {
-                ${categoryIds && categoryIds.length > 0 ? 'category_id: { _in: $categoryIds }' : ''}
+              where: { 
+                category_id: { _in: $categoryIds }
               }
               order_by: { created_at: desc }
             ) {
@@ -43,7 +43,7 @@ export const useRecipes = ({ limit, categoryIds }: UseRecipesOptions = {}) => {
         `,
         variables: {
           limit,
-          categoryIds: categoryIds && categoryIds.length > 0 ? categoryIds : undefined,
+          categoryIds: categoryIds && categoryIds.length > 0 ? categoryIds : null,
         },
         fetchPolicy: 'network-only',
       })
