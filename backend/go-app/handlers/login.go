@@ -38,7 +38,7 @@ func LoginHandler(c *gin.Context) {
 		return
 	}
 
-	// Read request body
+	// Read body
 	rawBody, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		log.Printf("❌ Could not read request body: %v", err)
@@ -57,7 +57,7 @@ func LoginHandler(c *gin.Context) {
 	email := strings.ToLower(strings.TrimSpace(req.Input.Email))
 	password := strings.TrimSpace(req.Input.Password)
 
-	// Query Hasura
+	// Query Hasura for the user by email
 	query := `
 		query($email: String!) {
 			users(where: {email: {_eq: $email}}) {
@@ -109,13 +109,11 @@ func LoginHandler(c *gin.Context) {
 	}
 
 	if len(result.Errors) > 0 {
-		log.Printf("❌ Hasura error: %+v", result.Errors)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": result.Errors[0].Message})
 		return
 	}
 
 	if len(result.Data.Users) == 0 {
-		log.Printf("🔴 User not found: %s", email)
 		c.JSON(http.StatusUnauthorized, gin.H{"message": "Invalid email or password"})
 		return
 	}
@@ -124,13 +122,12 @@ func LoginHandler(c *gin.Context) {
 
 	// Verify password
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
-		log.Printf("❌ Password mismatch: %v", err)
 		c.JSON(http.StatusUnauthorized, gin.H{"message": "Invalid email or password"})
 		return
 	}
 
-	// ✅ Generate JWT via jwt.go
-	token, err := auth.GenerateJWTWithHasuraClaims(user.ID)
+	// Generate JWT
+	token, err := auth.GenerateJWT(user.ID)
 	if err != nil {
 		log.Printf("❌ JWT generation failed: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "Could not generate token"})
