@@ -1,81 +1,42 @@
-import { defineNuxtPlugin, useRuntimeConfig } from '#imports'
-import {
-  ApolloClient,
-  InMemoryCache,
-  HttpLink,
-  ApolloLink,
-  concat,
-  split,
-} from '@apollo/client/core'
-import { getMainDefinition } from '@apollo/client/utilities'
-import { DefaultApolloClient } from '@vue/apollo-composable'
-import { createClient } from 'graphql-ws'
-import { GraphQLWsLink } from '@apollo/client/link/subscriptions'
+// plugins/manual-apollo.ts
+import { ApolloClient, InMemoryCache, HttpLink } from '@apollo/client/core'
+import fetch from 'cross-fetch'
+import type { NormalizedCacheObject } from '@apollo/client/core'
+import type { NuxtApp } from '#app'
 
-export default defineNuxtPlugin((nuxtApp) => {
+export default defineNuxtPlugin((nuxtApp: NuxtApp) => {
   const config = useRuntimeConfig()
 
-  // Public client
-  const publicClient = new ApolloClient({
-    link: concat(
-      new ApolloLink((op, forward) => {
-        op.setContext({ headers: { 'x-hasura-role': 'public' } })
-        return forward(op)
+  // Prevent re-providing if plugin runs multiple times
+  if (!nuxtApp._context.provides.$publicApollo) {
+    const publicClient: ApolloClient<NormalizedCacheObject> = new ApolloClient({
+      link: new HttpLink({
+        uri: config.public.hasuraGraphqlUrl,
+        fetch,
+        headers: {
+          'x-hasura-role': 'public', // optional, fallback
+        },
       }),
-      new HttpLink({ uri: config.public.hasuraUrl })
-    ),
-    cache: new InMemoryCache(),
-  })
+      cache: new InMemoryCache(),
+      ssrMode: process.server,
+    })
 
-  // Auth client
-  const authLink = new ApolloLink((op, forward) => {
-    let headers: Record<string, string> = { 'x-hasura-role': 'public' }
-    if (process.client) {
-      const token = localStorage.getItem('token')
-      if (token) headers = { Authorization: `Bearer ${token}` }
-    }
-    op.setContext({ headers })
-    return forward(op)
-  })
+    nuxtApp.provide('$publicApollo', publicClient)
+  }
 
-  const wsLink = process.client
-    ? new GraphQLWsLink(
-        createClient({
-          url: config.public.hasuraWsUrl as string,
-          connectionParams: () => {
-            const token = localStorage.getItem('token')
-            return token ? { Authorization: `Bearer ${token}` } : { 'x-hasura-role': 'public' }
-          },
-        })
-      )
-    : null
+  if (!nuxtApp._context.provides.$authApollo) {
+    const authClient: ApolloClient<NormalizedCacheObject> = new ApolloClient({
+      link: new HttpLink({
+        uri: config.public.hasuraGraphqlUrl,
+        fetch,
+        headers: {
+          Authorization: `Bearer ${process.client ? localStorage.getItem('token') || '' : ''}`,
+        },
+      }),
+      cache: new InMemoryCache(),
+      ssrMode: process.server,
+    })
 
-  const link =
-    process.client && wsLink
-      ? split(
-          ({ query }) => {
-            const def = getMainDefinition(query)
-            return def.kind === 'OperationDefinition' && def.operation === 'subscription'
-          },
-          wsLink,
-          concat(authLink, new HttpLink({ uri: config.public.hasuraUrl }))
-        )
-      : concat(authLink, new HttpLink({ uri: config.public.hasuraUrl }))
-
-  const authClient = new ApolloClient({
-    link,
-    cache: new InMemoryCache(),
-  })
-
-  // Provide safely — only once
-  nuxtApp.provide('publicApollo', publicClient)
-  nuxtApp.provide('authApollo', authClient)
-  nuxtApp.provide(DefaultApolloClient, publicClient)
-
-  return {
-    provide: {
-      publicApollo: publicClient,
-      authApollo: authClient,
-    },
+    nuxtApp.provide('$authApollo', authClient)
   }
 })
