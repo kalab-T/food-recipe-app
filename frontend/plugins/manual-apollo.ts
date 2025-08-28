@@ -15,11 +15,12 @@ import { GraphQLWsLink } from '@apollo/client/link/subscriptions'
 export default defineNuxtPlugin((nuxtApp) => {
   const config = useRuntimeConfig()
 
+  // HTTP link for queries and mutations
   const httpLink = new HttpLink({
-    uri: config.public.hasuraUrl as string,
+    uri: config.public.hasuraUrl as string, // deployed Hasura URL
   })
 
-  // Auth middleware
+  // Auth middleware to attach JWT
   const authMiddleware = new ApolloLink((operation, forward) => {
     const token = process.client ? localStorage.getItem('token') : null
     const headers: Record<string, string> = {}
@@ -27,7 +28,7 @@ export default defineNuxtPlugin((nuxtApp) => {
     if (token && isValidJwt(token)) {
       headers['Authorization'] = `Bearer ${token}`
     } else {
-      headers['x-hasura-role'] = 'public'
+      headers['x-hasura-role'] = 'public' // fallback role
       if (process.client) localStorage.removeItem('token')
     }
 
@@ -35,31 +36,29 @@ export default defineNuxtPlugin((nuxtApp) => {
     return forward(operation)
   })
 
-  // graphql-ws client for subscriptions
-  const wsLink = process.client
-    ? new GraphQLWsLink(
-        createClient({
-          url: config.public.hasuraWsUrl as string,
-          connectionParams: () => {
-            const token = localStorage.getItem('token')
-            return token && isValidJwt(token)
-              ? { Authorization: `Bearer ${token}` }
-              : { 'x-hasura-role': 'public' }
-          },
-          retryAttempts: 5,
-        })
-      )
-    : null
+  // WebSocket link for subscriptions
+  const wsLink =
+    process.client &&
+    new GraphQLWsLink(
+      createClient({
+        url: config.public.hasuraWsUrl as string,
+        connectionParams: () => {
+          const token = localStorage.getItem('token')
+          return token && isValidJwt(token)
+            ? { Authorization: `Bearer ${token}` }
+            : { 'x-hasura-role': 'public' }
+        },
+        retryAttempts: 5,
+      })
+    )
 
+  // Choose link depending on query type
   const link =
     process.client && wsLink
       ? split(
           ({ query }) => {
             const def = getMainDefinition(query)
-            return (
-              def.kind === 'OperationDefinition' &&
-              def.operation === 'subscription'
-            )
+            return def.kind === 'OperationDefinition' && def.operation === 'subscription'
           },
           wsLink,
           concat(authMiddleware, httpLink)
@@ -71,6 +70,7 @@ export default defineNuxtPlugin((nuxtApp) => {
     cache: new InMemoryCache(),
   })
 
+  // Provide Apollo client to Nuxt app
   nuxtApp.vueApp.provide(DefaultApolloClient, apolloClient)
   nuxtApp.provide('publicApollo', apolloClient)
 
@@ -81,6 +81,7 @@ export default defineNuxtPlugin((nuxtApp) => {
   }
 })
 
+// Simple JWT validation
 function isValidJwt(token: string | null): boolean {
   if (!token) return false
   try {
