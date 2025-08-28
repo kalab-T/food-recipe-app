@@ -1,11 +1,13 @@
+// composables/useRecipes.ts
 import { gql } from 'graphql-tag'
 import { useNuxtApp, useAsyncData } from '#app'
 
-type Recipe = {
+export type Recipe = {
   id: string
   title: string
   image: string
   category_id: string
+  // Add other fields if needed
 }
 
 type RecipeResponse = {
@@ -28,7 +30,9 @@ export const useRecipes = ({ limit, categoryIds }: UseRecipesOptions = {}) => {
           query GetRecipes($limit: Int, $categoryIds: [uuid!]) {
             recipes(
               limit: $limit
-              where: { category_id: { _in: $categoryIds } }
+              where: {
+                ${categoryIds && categoryIds.length > 0 ? 'category_id: {_in: $categoryIds}' : '{}'}
+              }
               order_by: { created_at: desc }
             ) {
               id
@@ -39,13 +43,13 @@ export const useRecipes = ({ limit, categoryIds }: UseRecipesOptions = {}) => {
           }
         `,
         variables: {
-          limit,
-          categoryIds: categoryIds && categoryIds.length > 0 ? categoryIds : null,
+          limit: limit || undefined,
+          categoryIds: categoryIds && categoryIds.length > 0 ? categoryIds : undefined,
         },
         fetchPolicy: 'network-only',
       })
 
-      return { recipes: result.data.recipes || [] }
+      return { recipes: result.data.recipes }
     }
   )
 
