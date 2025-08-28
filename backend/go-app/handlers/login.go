@@ -7,7 +7,6 @@ import (
 	"log"
 	"net/http"
 	"strings"
-	"time"
 
 	"go-app/auth"
 	"go-app/config"
@@ -39,7 +38,7 @@ func LoginHandler(c *gin.Context) {
 		return
 	}
 
-	// Read body
+	// Read request body
 	rawBody, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		log.Printf("❌ Could not read request body: %v", err)
@@ -58,7 +57,7 @@ func LoginHandler(c *gin.Context) {
 	email := strings.ToLower(strings.TrimSpace(req.Input.Email))
 	password := strings.TrimSpace(req.Input.Password)
 
-	// Query Hasura for the user by email
+	// Query Hasura
 	query := `
 		query($email: String!) {
 			users(where: {email: {_eq: $email}}) {
@@ -130,7 +129,7 @@ func LoginHandler(c *gin.Context) {
 		return
 	}
 
-	// Generate JWT with Hasura claims
+	// ✅ Generate JWT via jwt.go
 	token, err := auth.GenerateJWTWithHasuraClaims(user.ID)
 	if err != nil {
 		log.Printf("❌ JWT generation failed: %v", err)
