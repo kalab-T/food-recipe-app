@@ -18,12 +18,16 @@ type UseRecipesOptions = {
 }
 
 export const useRecipes = ({ limit, categoryIds }: UseRecipesOptions = {}) => {
-  const { $publicApollo } = useNuxtApp()
+  const { $publicApollo, $authApollo } = useNuxtApp()
+
+  // ✅ Decide which client to use: public (no token) or auth (with token)
+  const client =
+    process.client && localStorage.getItem('token') ? $authApollo : $publicApollo
 
   const { data, pending, error, refresh } = useAsyncData<RecipeResponse>(
     'recipes',
     async () => {
-      const result = await $publicApollo.query({
+      const result = await client.query({
         query: gql`
           query GetRecipes($limit: Int, $categoryIds: [uuid!]) {
             recipes(
