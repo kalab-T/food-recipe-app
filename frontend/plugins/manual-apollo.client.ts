@@ -19,23 +19,28 @@ export default defineNuxtPlugin((nuxtApp) => {
     uri: config.public.hasuraUrl as string,
   })
 
+  // ✅ Public JWT for landing page
+  const PUBLIC_JWT = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ4LWhhc3VyYS1hbGxvd2VkLXJvbGVzIjpbInB1YmxpYyJdLCJ4LWhhc3VyYS1kZWZhdWx0LXJvbGUiOiJwdWJsaWMiLCJ4LWhhc3VyYS11c2VyLWlkIjoiYW5vbnltb3VzIiwiaWF0IjoxNzU2NDU2NTM3LCJleHAiOjE3NTY1NDI5Mzd9.wANgfvYqcw56yzeXCvOuprHaNjKZCm-jB-GLOoWUpr0'
+
   const authMiddleware = new ApolloLink((operation, forward) => {
     const headers: Record<string, string> = {}
+
     if (process.client) {
       const token = localStorage.getItem('token')
       if (token) {
-        headers['Authorization'] = `Bearer ${token}`
+        headers['Authorization'] = `Bearer ${token}` // logged-in user
       } else {
-        // ❌ No JWT? Use public role
-        headers['x-hasura-role'] = 'public'
+        headers['Authorization'] = `Bearer ${PUBLIC_JWT}` // public landing page
       }
     } else {
-      headers['x-hasura-role'] = 'public'
+      headers['Authorization'] = `Bearer ${PUBLIC_JWT}` // server-side
     }
+
     operation.setContext({ headers })
     return forward(operation)
   })
 
+  // Subscriptions (client-side)
   const wsLink =
     process.client &&
     new GraphQLWsLink(
@@ -43,9 +48,9 @@ export default defineNuxtPlugin((nuxtApp) => {
         url: config.public.hasuraWsUrl as string,
         connectionParams: () => {
           const token = localStorage.getItem('token')
-          return token
-            ? { Authorization: `Bearer ${token}` }
-            : { 'x-hasura-role': 'public' }
+          return {
+            Authorization: `Bearer ${token || PUBLIC_JWT}`,
+          }
         },
         retryAttempts: 5,
       })
@@ -68,7 +73,6 @@ export default defineNuxtPlugin((nuxtApp) => {
     cache: new InMemoryCache(),
   })
 
-  // ✅ Provide clients
   nuxtApp.vueApp.provide(DefaultApolloClient, apolloClient)
   nuxtApp.provide('publicApollo', apolloClient)
 })
