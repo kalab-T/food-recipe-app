@@ -8,7 +8,9 @@ import (
 	"net/http"
 	"strings"
 
+	"go-app/auth"
 	"go-app/config"
+
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -20,6 +22,7 @@ type SignupRequest struct {
 }
 
 func SignupHandler(c *gin.Context) {
+	// require config
 	if config.HasuraURL() == "" || config.HasuraAdminSecret() == "" {
 		log.Println("❌ Hasura config missing")
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "Server configuration error"})
@@ -38,21 +41,24 @@ func SignupHandler(c *gin.Context) {
 	input.Email = strings.ToLower(strings.TrimSpace(input.Email))
 	input.Password = strings.TrimSpace(input.Password)
 
+	// Hash password
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(input.Password), 12)
 	if err != nil {
+		log.Printf("❌ Hashing failed: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to secure password"})
 		return
 	}
 
+	// Insert user into Hasura using admin secret
 	mutation := `
-	mutation($name: String!, $email: String!, $password: String!) {
-		insert_users_one(object: {name: $name, email: $email, password: $password}) {
-			id
-			name
-			email
+		mutation ($name: String!, $email: String!, $password: String!) {
+			insert_users_one(object: {name: $name, email: $email, password: $password}) {
+				id
+				name
+				email
+			}
 		}
-	}`
-
+	`
 	reqBody, _ := json.Marshal(map[string]interface{}{
 		"query": mutation,
 		"variables": map[string]interface{}{
@@ -69,12 +75,14 @@ func SignupHandler(c *gin.Context) {
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
+		log.Printf("❌ Hasura connection failed: %v", err)
 		c.JSON(http.StatusServiceUnavailable, gin.H{"message": "Service unavailable"})
 		return
 	}
 	defer resp.Body.Close()
 
 	bodyBytes, _ := io.ReadAll(resp.Body)
+	log.Printf("🔍 Hasura signup response: %s", string(bodyBytes))
 
 	if resp.StatusCode != http.StatusOK {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -98,6 +106,7 @@ func SignupHandler(c *gin.Context) {
 	}
 
 	if err := json.Unmarshal(bodyBytes, &result); err != nil {
+		log.Printf("❌ Parse error: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "Data processing error"})
 		return
 	}
@@ -113,9 +122,18 @@ func SignupHandler(c *gin.Context) {
 
 	user := result.Data.InsertUser
 
+	// Generate JWT for this user using your auth package
+	token, err := auth.GenerateJWT(user.ID)
+	if err != nil {
+		log.Printf("❌ Failed to generate token: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Could not generate token"})
+		return
+	}
+
 	c.JSON(http.StatusCreated, gin.H{
 		"user_id": user.ID,
 		"name":    user.Name,
 		"email":   user.Email,
+		"token":   token,
 	})
 }
