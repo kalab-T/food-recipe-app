@@ -1,22 +1,22 @@
+import { defineEventHandler, readBody, createError, sendError } from 'h3'
+
 export default defineEventHandler(async (event) => {
   const body = await readBody(event)
-  const config = useRuntimeConfig()
+  const { email, password } = body
+
+  if (!email || !password) {
+    return sendError(event, createError({ statusCode: 400, statusMessage: 'Missing fields' }))
+  }
 
   try {
-    const res = await $fetch(`${config.public.apiBase}/login`, {
+    const response = await $fetch('http://localhost:8080/login', {
       method: 'POST',
-      body,
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
+      body: { email, password }
     })
 
-    return res
-  } catch (err: any) {
-    console.error('Login error:', err)
-    throw createError({
-      statusCode: err?.statusCode || 500,
-      statusMessage: err?.data?.error || 'Login failed',
-    })
+    return response
+  } catch (error: any) {
+    return sendError(event, createError({ statusCode: 500, statusMessage: error.message }))
   }
 })
