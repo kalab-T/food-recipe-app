@@ -15,11 +15,22 @@ import { GraphQLWsLink } from '@apollo/client/link/subscriptions'
 export default defineNuxtPlugin((nuxtApp) => {
   const config = useRuntimeConfig()
 
-  const httpLink = new HttpLink({
+  // --------------------
+  // Public client (always x-hasura-role=public, never JWT)
+  // --------------------
+  const publicHttpLink = new HttpLink({
     uri: config.public.hasuraUrl as string,
+    headers: { 'x-hasura-role': 'public' },
   })
 
-  // Auth middleware: attach JWT if present, otherwise use public role
+  const publicClient = new ApolloClient({
+    link: publicHttpLink,
+    cache: new InMemoryCache(),
+  })
+
+  // --------------------
+  // Authenticated client (JWT if available, else fallback public)
+  // --------------------
   const authMiddleware = new ApolloLink((operation, forward) => {
     const headers: Record<string, string> = {}
     if (process.client) {
@@ -36,7 +47,9 @@ export default defineNuxtPlugin((nuxtApp) => {
     return forward(operation)
   })
 
-  // Subscriptions (only client)
+  const httpLink = new HttpLink({ uri: config.public.hasuraUrl as string })
+
+  // Subscriptions (authenticated client)
   const wsLink =
     process.client &&
     new GraphQLWsLink(
@@ -52,8 +65,7 @@ export default defineNuxtPlugin((nuxtApp) => {
       })
     )
 
-  // Choose wsLink for subscriptions, otherwise httpLink
-  const link =
+  const authLink =
     process.client && wsLink
       ? split(
           ({ query }) => {
@@ -65,14 +77,18 @@ export default defineNuxtPlugin((nuxtApp) => {
         )
       : concat(authMiddleware, httpLink)
 
-  const apolloClient = new ApolloClient({
-    link,
+  const authClient = new ApolloClient({
+    link: authLink,
     cache: new InMemoryCache(),
   })
 
-  // ✅ Correct way: provide using Symbol and string key separately
-  nuxtApp.vueApp.provide(DefaultApolloClient, apolloClient) // for vue-apollo
-  nuxtApp.provide('publicApollo', apolloClient) // for composables
+  // --------------------
+  // Provide both clients
+  // --------------------
+  // Vue Apollo default = authenticated client
+  nuxtApp.vueApp.provide(DefaultApolloClient, authClient)
 
-  // ❌ DO NOT return { provide: ... } with the Symbol again (this caused the error)
+  // Named clients
+  nuxtApp.provide('authApollo', authClient)
+  nuxtApp.provide('publicApollo', publicClient)
 })
