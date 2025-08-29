@@ -5,18 +5,24 @@ export default defineEventHandler(async (event) => {
   const { email, password } = body
 
   if (!email || !password) {
-    return sendError(event, createError({ statusCode: 400, statusMessage: 'Missing fields' }))
+    return sendError(
+      event,
+      createError({ statusCode: 400, statusMessage: 'Missing fields' })
+    )
   }
 
   try {
     const response = await $fetch('http://localhost:8080/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: { email, password }
+      body: { input: { email, password } },
     })
 
     return response
   } catch (error: any) {
-    return sendError(event, createError({ statusCode: 500, statusMessage: error.message }))
+    return sendError(
+      event,
+      createError({ statusCode: 500, statusMessage: error.message })
+    )
   }
 })
