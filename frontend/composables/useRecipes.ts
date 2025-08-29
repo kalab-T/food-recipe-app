@@ -20,38 +20,25 @@ type RecipeResponse = {
   recipes: Recipe[]
 }
 
-type UseRecipesOptions = {
-  limit?: number
-}
-
-export const useRecipes = ({ limit = 6 }: UseRecipesOptions = {}) => {
+export const useRecipes = (limit: number = 6) => {
   const { $publicApollo } = useNuxtApp()
 
   const { data, pending, error, refresh } = useAsyncData<RecipeResponse>(
-    'landing-recipes',
+    'recipes',
     async () => {
       const result = await $publicApollo.query({
         query: gql`
-          query GetLandingRecipes($limit: Int!) {
-            recipes(limit: $limit, order_by: { created_at: desc }) {
+          query GetLandingRecipes {
+            recipes(limit: ${limit}, order_by: { created_at: desc }) {
               id
               title
               description
               image
-              user {
-                name
-              }
-              likes_aggregate {
-                aggregate {
-                  count
-                }
-              }
+              user { name }
+              likes_aggregate { aggregate { count } }
             }
           }
         `,
-        variables: {
-          limit,
-        },
         fetchPolicy: 'network-only',
       })
       return result.data
