@@ -19,28 +19,24 @@ export default defineNuxtPlugin((nuxtApp) => {
     uri: config.public.hasuraUrl as string,
   })
 
-  // ✅ Public JWT for landing page
-  const PUBLIC_JWT = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ4LWhhc3VyYS1hbGxvd2VkLXJvbGVzIjpbInB1YmxpYyJdLCJ4LWhhc3VyYS1kZWZhdWx0LXJvbGUiOiJwdWJsaWMiLCJ4LWhhc3VyYS11c2VyLWlkIjoiYW5vbnltb3VzIiwiaWF0IjoxNzU2NDU2NTM3LCJleHAiOjE3NTY1NDI5Mzd9.wANgfvYqcw56yzeXCvOuprHaNjKZCm-jB-GLOoWUpr0'
-
+  // Auth middleware: attach JWT if present, otherwise fallback to "public" role
   const authMiddleware = new ApolloLink((operation, forward) => {
     const headers: Record<string, string> = {}
-
     if (process.client) {
       const token = localStorage.getItem('token')
       if (token) {
-        headers['Authorization'] = `Bearer ${token}` // logged-in user
+        headers['Authorization'] = `Bearer ${token}`
       } else {
-        headers['Authorization'] = `Bearer ${PUBLIC_JWT}` // public landing page
+        headers['x-hasura-role'] = 'public'
       }
     } else {
-      headers['Authorization'] = `Bearer ${PUBLIC_JWT}` // server-side
+      headers['x-hasura-role'] = 'public'
     }
-
     operation.setContext({ headers })
     return forward(operation)
   })
 
-  // Subscriptions (client-side)
+  // GraphQL subscriptions (client-side only)
   const wsLink =
     process.client &&
     new GraphQLWsLink(
@@ -48,14 +44,15 @@ export default defineNuxtPlugin((nuxtApp) => {
         url: config.public.hasuraWsUrl as string,
         connectionParams: () => {
           const token = localStorage.getItem('token')
-          return {
-            Authorization: `Bearer ${token || PUBLIC_JWT}`,
-          }
+          return token
+            ? { Authorization: `Bearer ${token}` }
+            : { 'x-hasura-role': 'public' }
         },
         retryAttempts: 5,
       })
     )
 
+  // Split link for subscriptions
   const link =
     process.client && wsLink
       ? split(
@@ -73,6 +70,7 @@ export default defineNuxtPlugin((nuxtApp) => {
     cache: new InMemoryCache(),
   })
 
+  // Provide Apollo client globally
   nuxtApp.vueApp.provide(DefaultApolloClient, apolloClient)
   nuxtApp.provide('publicApollo', apolloClient)
 })
