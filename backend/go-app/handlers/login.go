@@ -92,12 +92,12 @@ func LoginHandler(c *gin.Context) {
 		return
 	}
 
-	if len(result.Users) == 0 {
+	if len(result.Data.Users) == 0 {
 		c.JSON(http.StatusUnauthorized, gin.H{"message": "Invalid email or password"})
 		return
 	}
 
-	user := result.Users[0]
+	user := result.Data.Users[0]
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(input.Password)); err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"message": "Invalid email or password"})
 		return
