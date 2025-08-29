@@ -4,17 +4,25 @@ export const useSignup = () => {
   const { setToken, setUser } = useAuth()
 
   const signup = async (name: string, email: string, password: string) => {
-    const res = await $fetch('/api/signup', {
-      method: 'POST',
-      body: { name, email, password }
-    })
+    try {
+      const res = await fetch('/api/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email, password }),
+      })
+      const data = await res.json()
 
-    if (!res.token) throw new Error('Signup failed')
+      if (!res.ok || !data.token) {
+        return { success: false, error: data.message || 'Signup failed' }
+      }
 
-    setToken(res.token)
-    setUser({ id: res.user_id, name, email })
+      setToken(data.token)
+      setUser({ id: data.user_id, name, email })
 
-    return { success: true }
+      return { success: true }
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Signup failed' }
+    }
   }
 
   return { signup }
