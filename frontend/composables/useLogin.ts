@@ -1,7 +1,7 @@
 import { useAuth } from './useAuth'
 
 export const useLogin = () => {
-  const { setUser } = useAuth()
+  const { setToken, setUser } = useAuth()
 
   const login = async (email: string, password: string) => {
     try {
@@ -11,11 +11,11 @@ export const useLogin = () => {
         body: JSON.stringify({ email, password }),
       })
       const data = await res.json()
-
       if (!res.ok) {
         return { success: false, error: data.message || 'Login failed' }
       }
 
+      if (data.token) setToken(data.token)
       setUser({ id: data.user_id, name: data.name, email: data.email })
       return { success: true }
     } catch (err: any) {
