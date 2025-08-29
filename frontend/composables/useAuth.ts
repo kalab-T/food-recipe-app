@@ -22,51 +22,43 @@ function safelyParseUser(raw: string | null): User | null {
   }
 }
 
-// Initialize token and user from localStorage on client
 if (process.client) {
   token.value = localStorage.getItem('token')
   user.value = safelyParseUser(localStorage.getItem('user'))
 }
 
-/**
- * useAuth composable provides reactive authentication state and helpers.
- */
 export const useAuth = () => {
   const isLoggedIn = computed(() => !!token.value)
 
-  const setToken = (newToken: string) => {
+  const setToken = (newToken: string | null) => {
     token.value = newToken
     if (process.client) {
-      localStorage.setItem('token', newToken)
+      if (newToken) localStorage.setItem('token', newToken)
+      else localStorage.removeItem('token')
     }
   }
 
-  const setUser = (userData: User) => {
+  const setUser = (userData: User | null) => {
     user.value = userData
     if (process.client) {
-      localStorage.setItem('user', JSON.stringify(userData))
+      if (userData) localStorage.setItem('user', JSON.stringify(userData))
+      else localStorage.removeItem('user')
     }
   }
 
   const logout = async () => {
-    token.value = null
-    user.value = null
-    if (process.client) {
-      localStorage.removeItem('token')
-      localStorage.removeItem('user')
-    }
-    const { $apolloClient } = useNuxtApp()
-    const apolloClient = $apolloClient as ApolloClient<NormalizedCacheObject>
-    await apolloClient.resetStore()
+    setToken(null)
+    setUser(null)
+    const nuxt = useNuxtApp()
+    const apolloClient = (nuxt as any).$apolloClient as ApolloClient<NormalizedCacheObject> | undefined
+    if (apolloClient) await apolloClient.resetStore()
   }
 
   const avatarInitials = computed(() => {
     if (!user.value) return ''
     const name = user.value.name || user.value.email || ''
     const parts = name.trim().split(' ')
-    return parts.length >= 2
-      ? `${parts[0][0]}${parts[1][0]}`.toUpperCase()
-      : name.slice(0, 2).toUpperCase()
+    return parts.length >= 2 ? `${parts[0][0]}${parts[1][0]}`.toUpperCase() : name.slice(0, 2).toUpperCase()
   })
 
   return {
