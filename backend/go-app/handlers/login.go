@@ -8,9 +8,7 @@ import (
 	"net/http"
 	"strings"
 
-	"go-app/auth"
 	"go-app/config"
-
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -22,38 +20,34 @@ type LoginRequest struct {
 
 func LoginHandler(c *gin.Context) {
 	if config.HasuraURL() == "" || config.HasuraAdminSecret() == "" {
-		log.Println("❌ Hasura config missing")
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "Server configuration error"})
 		return
 	}
 
-	var payload struct {
-		Input LoginRequest `json:"input"`
-	}
+	var payload LoginRequest
 	if err := c.ShouldBindJSON(&payload); err != nil {
-		log.Printf("❌ Invalid login request: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid input: " + err.Error()})
 		return
 	}
 
-	input := payload.Input
-	input.Email = strings.ToLower(strings.TrimSpace(input.Email))
-	input.Password = strings.TrimSpace(input.Password)
+	email := strings.ToLower(strings.TrimSpace(payload.Email))
+	password := strings.TrimSpace(payload.Password)
 
 	query := `
-		query($email: String!) {
-			users(where: {email: {_eq: $email}}) {
-				id
-				name
-				email
-				password
-			}
+	query($email: String!) {
+		users(where: {email: {_eq: $email}}) {
+			id
+			name
+			email
+			password
 		}
-	`
+	}`
 
 	reqBody, _ := json.Marshal(map[string]interface{}{
-		"query":     query,
-		"variables": map[string]interface{}{"email": input.Email},
+		"query": query,
+		"variables": map[string]interface{}{
+			"email": email,
+		},
 	})
 
 	req, _ := http.NewRequest("POST", config.HasuraURL(), bytes.NewBuffer(reqBody))
@@ -63,14 +57,12 @@ func LoginHandler(c *gin.Context) {
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Printf("❌ Hasura connection failed: %v", err)
 		c.JSON(http.StatusServiceUnavailable, gin.H{"message": "Service unavailable"})
 		return
 	}
 	defer resp.Body.Close()
 
 	bodyBytes, _ := io.ReadAll(resp.Body)
-	log.Printf("🔍 Hasura login response: %s", string(bodyBytes))
 
 	var result struct {
 		Data struct {
@@ -87,26 +79,18 @@ func LoginHandler(c *gin.Context) {
 	}
 
 	if err := json.Unmarshal(bodyBytes, &result); err != nil {
-		log.Printf("❌ Failed to parse response: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "Data processing error"})
 		return
 	}
 
 	if len(result.Data.Users) == 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{"message": "Invalid email or password"})
+		c.JSON(http.StatusUnauthorized, gin.H{"message": "Invalid credentials"})
 		return
 	}
 
 	user := result.Data.Users[0]
-	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(input.Password)); err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"message": "Invalid email or password"})
-		return
-	}
-
-	token, err := auth.GenerateJWT(user.ID)
-	if err != nil {
-		log.Printf("❌ Failed to generate token: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "Could not generate token"})
+	if bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)) != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"message": "Invalid credentials"})
 		return
 	}
 
@@ -114,6 +98,5 @@ func LoginHandler(c *gin.Context) {
 		"user_id": user.ID,
 		"name":    user.Name,
 		"email":   user.Email,
-		"token":   token,
 	})
 }
