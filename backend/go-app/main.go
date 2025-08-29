@@ -14,28 +14,23 @@ import (
 )
 
 func main() {
-	// Load environment variables from .env (located in same folder)
+	// Load .env
 	if err := godotenv.Load(); err != nil {
 		log.Println("⚠️ No .env file found (proceeding with system env vars)")
 	} else {
-		log.Println("✅ .env file loaded successfully")
+		log.Println("✅ .env file loaded")
 	}
 
-	// Log loaded config values to verify
-	log.Printf("HASURA_URL=%q\n", config.HasuraURL())
-	log.Printf("HASURA_ADMIN_SECRET=%q\n", config.HasuraAdminSecret())
-	log.Printf("PORT=%q\n", config.BackendPort())
-
 	port := config.BackendPort()
+	uploadDir := os.Getenv("UPLOAD_DIR")
+	if uploadDir == "" {
+		uploadDir = "./static/images"
+	}
 
 	r := gin.Default()
 
-	// CORS middleware config
 	r.Use(cors.New(cors.Config{
-		AllowOrigins: []string{
-			"http://localhost:3000", // local dev
-			"https://food-recipe-kit0a86s8-kalabs-projects-1e20c180.vercel.app", // live Vercel frontend
-		},
+		AllowOrigins:     []string{"http://localhost:3000", "https://food-recipe-app-m7dv.vercel.app"},
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "x-hasura-admin-secret"},
 		ExposeHeaders:    []string{"Content-Length"},
@@ -43,24 +38,15 @@ func main() {
 		MaxAge:           12 * time.Hour,
 	}))
 
-	// Serve images via route (reliable on Render)
-	r.GET("/images/:filename", func(c *gin.Context) {
-		file := c.Param("filename")
-		wd, err := os.Getwd()
-		if err != nil {
-			log.Printf("❌ Failed to get working directory: %v", err)
-			c.Status(500)
-			return
-		}
-		c.File(wd + "/static/images/" + file)
-	})
+	r.Static("/images", uploadDir)
 
-	// API Routes
+	// API routes
 	r.POST("/signup", handlers.SignupHandler)
 	r.POST("/login", handlers.LoginHandler)
+
+	// Upload route
 	r.POST("/upload", upload.UploadHandler)
 
-	// Start server
 	log.Printf("🚀 Server running on port %s\n", port)
 	if err := r.Run(":" + port); err != nil {
 		log.Fatalf("❌ Failed to start server: %v", err)
