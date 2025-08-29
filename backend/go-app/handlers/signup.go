@@ -8,9 +8,7 @@ import (
 	"net/http"
 	"strings"
 
-	"go-app/auth"
 	"go-app/config"
-
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -32,7 +30,6 @@ func SignupHandler(c *gin.Context) {
 		Input SignupRequest `json:"input"`
 	}
 	if err := c.ShouldBindJSON(&payload); err != nil {
-		log.Printf("❌ Invalid signup request: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid input: " + err.Error()})
 		return
 	}
@@ -43,20 +40,19 @@ func SignupHandler(c *gin.Context) {
 
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(input.Password), 12)
 	if err != nil {
-		log.Printf("❌ Password hashing failed: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to secure password"})
 		return
 	}
 
 	mutation := `
-		mutation($name: String!, $email: String!, $password: String!) {
-			insert_users_one(object: {name: $name, email: $email, password: $password}) {
-				id
-				name
-				email
-			}
+	mutation($name: String!, $email: String!, $password: String!) {
+		insert_users_one(object: {name: $name, email: $email, password: $password}) {
+			id
+			name
+			email
 		}
-	`
+	}`
+
 	reqBody, _ := json.Marshal(map[string]interface{}{
 		"query": mutation,
 		"variables": map[string]interface{}{
@@ -73,14 +69,12 @@ func SignupHandler(c *gin.Context) {
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Printf("❌ Hasura connection failed: %v", err)
 		c.JSON(http.StatusServiceUnavailable, gin.H{"message": "Service unavailable"})
 		return
 	}
 	defer resp.Body.Close()
 
 	bodyBytes, _ := io.ReadAll(resp.Body)
-	log.Printf("🔍 Hasura signup response: %s", string(bodyBytes))
 
 	if resp.StatusCode != http.StatusOK {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -104,7 +98,6 @@ func SignupHandler(c *gin.Context) {
 	}
 
 	if err := json.Unmarshal(bodyBytes, &result); err != nil {
-		log.Printf("❌ Failed to parse response: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "Data processing error"})
 		return
 	}
@@ -119,17 +112,10 @@ func SignupHandler(c *gin.Context) {
 	}
 
 	user := result.Data.InsertUser
-	token, err := auth.GenerateJWT(user.ID)
-	if err != nil {
-		log.Printf("❌ Failed to generate token: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "Could not generate token"})
-		return
-	}
 
 	c.JSON(http.StatusCreated, gin.H{
 		"user_id": user.ID,
 		"name":    user.Name,
 		"email":   user.Email,
-		"token":   token,
 	})
 }
