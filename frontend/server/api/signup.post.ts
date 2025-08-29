@@ -1,23 +1,13 @@
-import { defineEventHandler, readBody, createError, sendError } from 'h3'
-import { useRuntimeConfig } from '#imports'
-
 export default defineEventHandler(async (event) => {
   const body = await readBody(event)
-  const { name, email, password } = body
-  if (!name || !email || !password) {
-    return sendError(event, createError({ statusCode: 400, statusMessage: 'Missing fields' }))
-  }
 
-  const config = useRuntimeConfig()
-  const backend = config.public.apiBase || 'http://localhost:8080'
+  // Replace this with your Render backend URL
+  const backendUrl = "https://food-recipe-appp.onrender.com/signup"
 
-  try {
-    const res = await $fetch(`${backend}/signup`, {
-      method: 'POST',
-      body: { input: { name, email, password } },
-    })
-    return res
-  } catch (err: any) {
-    return sendError(event, createError({ statusCode: 500, statusMessage: err.message || 'Signup failed' }))
-  }
+  const res = await $fetch(backendUrl, {
+    method: "POST",
+    body: body,
+  })
+
+  return res
 })
