@@ -15,22 +15,10 @@ import { GraphQLWsLink } from '@apollo/client/link/subscriptions'
 export default defineNuxtPlugin((nuxtApp) => {
   const config = useRuntimeConfig()
 
-  // --------------------
-  // Public client (always x-hasura-role=public, never JWT)
-  // --------------------
-  const publicHttpLink = new HttpLink({
+  const httpLink = new HttpLink({
     uri: config.public.hasuraUrl as string,
-    headers: { 'x-hasura-role': 'public' },
   })
 
-  const publicClient = new ApolloClient({
-    link: publicHttpLink,
-    cache: new InMemoryCache(),
-  })
-
-  // --------------------
-  // Authenticated client (JWT if available, else fallback public)
-  // --------------------
   const authMiddleware = new ApolloLink((operation, forward) => {
     const headers: Record<string, string> = {}
     if (process.client) {
@@ -38,6 +26,7 @@ export default defineNuxtPlugin((nuxtApp) => {
       if (token) {
         headers['Authorization'] = `Bearer ${token}`
       } else {
+        // ❌ No JWT? Use public role
         headers['x-hasura-role'] = 'public'
       }
     } else {
@@ -47,9 +36,6 @@ export default defineNuxtPlugin((nuxtApp) => {
     return forward(operation)
   })
 
-  const httpLink = new HttpLink({ uri: config.public.hasuraUrl as string })
-
-  // Subscriptions (authenticated client)
   const wsLink =
     process.client &&
     new GraphQLWsLink(
@@ -65,7 +51,7 @@ export default defineNuxtPlugin((nuxtApp) => {
       })
     )
 
-  const authLink =
+  const link =
     process.client && wsLink
       ? split(
           ({ query }) => {
@@ -77,18 +63,12 @@ export default defineNuxtPlugin((nuxtApp) => {
         )
       : concat(authMiddleware, httpLink)
 
-  const authClient = new ApolloClient({
-    link: authLink,
+  const apolloClient = new ApolloClient({
+    link,
     cache: new InMemoryCache(),
   })
 
-  // --------------------
-  // Provide both clients
-  // --------------------
-  // Vue Apollo default = authenticated client
-  nuxtApp.vueApp.provide(DefaultApolloClient, authClient)
-
-  // Named clients
-  nuxtApp.provide('authApollo', authClient)
-  nuxtApp.provide('publicApollo', publicClient)
+  // ✅ Provide clients
+  nuxtApp.vueApp.provide(DefaultApolloClient, apolloClient)
+  nuxtApp.provide('publicApollo', apolloClient)
 })
