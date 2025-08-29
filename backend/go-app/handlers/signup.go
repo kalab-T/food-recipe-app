@@ -3,78 +3,105 @@ package handlers
 import (
 	"bytes"
 	"encoding/json"
+	"io"
+	"log"
 	"net/http"
-	"os"
+	"strings"
+
+	"go-app/auth"
+	"go-app/config"
 
 	"github.com/gin-gonic/gin"
-	"go-app/auth"
+	"golang.org/x/crypto/bcrypt"
 )
 
-type SignupInput struct {
-	Name     string `json:"name"`
-	Email    string `json:"email"`
-	Password string `json:"password"`
+type SignupRequest struct {
+	Name     string `json:"name" binding:"required"`
+	Email    string `json:"email" binding:"required,email"`
+	Password string `json:"password" binding:"required,min=8"`
 }
 
 func SignupHandler(c *gin.Context) {
-	var input SignupInput
-	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid input"})
+	var payload SignupRequest
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid input: " + err.Error()})
 		return
 	}
 
-	// Build Hasura mutation
-	hasuraURL := os.Getenv("HASURA_URL")
-	adminSecret := os.Getenv("HASURA_ADMIN_SECRET")
+	payload.Email = strings.ToLower(strings.TrimSpace(payload.Email))
+	payload.Password = strings.TrimSpace(payload.Password)
 
-	mutation := map[string]interface{}{
-		"query": `mutation ($name: String!, $email: String!, $password: String!) {
-			insert_users_one(object: {name: $name, email: $email, password: $password}) {
-				id
-			}
-		}`,
-		"variables": map[string]string{
-			"name":     input.Name,
-			"email":    input.Email,
-			"password": input.Password,
-		},
+	// Hash password
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(payload.Password), 12)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to hash password"})
+		return
 	}
 
-	body, _ := json.Marshal(mutation)
-	req, _ := http.NewRequest("POST", hasuraURL, bytes.NewBuffer(body))
+	// Hasura insert mutation
+	mutation := `
+	mutation($name: String!, $email: String!, $password: String!) {
+		insert_users_one(object: {name: $name, email: $email, password: $password}) {
+			id
+			name
+			email
+		}
+	}`
+
+	reqBody, _ := json.Marshal(map[string]interface{}{
+		"query": mutation,
+		"variables": map[string]interface{}{
+			"name":     payload.Name,
+			"email":    payload.Email,
+			"password": string(hashedPassword),
+		},
+	})
+
+	req, _ := http.NewRequest("POST", config.HasuraURL(), bytes.NewBuffer(reqBody))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-hasura-admin-secret", adminSecret) // 🔑 Important
+	req.Header.Set("x-hasura-admin-secret", config.HasuraAdminSecret())
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to contact Hasura"})
+		c.JSON(http.StatusServiceUnavailable, gin.H{"message": "Service unavailable"})
 		return
 	}
 	defer resp.Body.Close()
 
-	var result map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid Hasura response"})
+	bodyBytes, _ := io.ReadAll(resp.Body)
+
+	var result struct {
+		Data struct {
+			InsertUser struct {
+				ID    string `json:"id"`
+				Name  string `json:"name"`
+				Email string `json:"email"`
+			} `json:"insert_users_one"`
+		} `json:"data"`
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+
+	if err := json.Unmarshal(bodyBytes, &result); err != nil || len(result.Errors) > 0 {
+		c.JSON(http.StatusConflict, gin.H{"message": "Signup failed"})
 		return
 	}
 
-	userData := result["data"].(map[string]interface{})["insert_users_one"]
-	if userData == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "User insert failed"})
-		return
-	}
-	userID := userData.(map[string]interface{})["id"].(string)
+	user := result.Data.InsertUser
 
 	// Generate JWT
-	token, err := auth.GenerateJWT(userID)
+	token, err := auth.GenerateJWT(user.ID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to generate token"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
+	c.JSON(http.StatusCreated, gin.H{
+		"user_id": user.ID,
+		"name":    user.Name,
+		"email":   user.Email,
 		"token":   token,
-		"user_id": userID,
 	})
 }
