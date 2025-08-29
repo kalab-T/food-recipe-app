@@ -21,28 +21,39 @@ type LoginRequest struct {
 }
 
 func LoginHandler(c *gin.Context) {
-	var payload LoginRequest
-	if err := c.ShouldBindJSON(&payload); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid input"})
+	if config.HasuraURL() == "" || config.HasuraAdminSecret() == "" {
+		log.Println("❌ Hasura config missing")
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Server configuration error"})
 		return
 	}
 
-	email := strings.ToLower(strings.TrimSpace(payload.Email))
+	var payload struct {
+		Input LoginRequest `json:"input"`
+	}
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		log.Printf("❌ Invalid login request: %v", err)
+		c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid input: " + err.Error()})
+		return
+	}
 
-	// Query user by email using admin-secret
+	input := payload.Input
+	input.Email = strings.ToLower(strings.TrimSpace(input.Email))
+	input.Password = strings.TrimSpace(input.Password)
+
 	query := `
-	query($email: String!) {
-		users(where: {email: {_eq: $email}}) {
-			id
-			password
-			name
-			email
+		query($email: String!) {
+			users(where: {email: {_eq: $email}}) {
+				id
+				name
+				email
+				password
+			}
 		}
-	}`
+	`
 
 	reqBody, _ := json.Marshal(map[string]interface{}{
 		"query":     query,
-		"variables": map[string]interface{}{"email": email},
+		"variables": map[string]interface{}{"email": input.Email},
 	})
 
 	req, _ := http.NewRequest("POST", config.HasuraURL(), bytes.NewBuffer(reqBody))
@@ -52,40 +63,50 @@ func LoginHandler(c *gin.Context) {
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
+		log.Printf("❌ Hasura connection failed: %v", err)
 		c.JSON(http.StatusServiceUnavailable, gin.H{"message": "Service unavailable"})
 		return
 	}
 	defer resp.Body.Close()
 
 	bodyBytes, _ := io.ReadAll(resp.Body)
+	log.Printf("🔍 Hasura login response: %s", string(bodyBytes))
 
 	var result struct {
 		Data struct {
 			Users []struct {
 				ID       string `json:"id"`
-				Password string `json:"password"`
 				Name     string `json:"name"`
 				Email    string `json:"email"`
+				Password string `json:"password"`
 			} `json:"users"`
 		} `json:"data"`
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
 	}
 
-	if err := json.Unmarshal(bodyBytes, &result); err != nil || len(result.Data.Users) == 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{"message": "Invalid credentials"})
+	if err := json.Unmarshal(bodyBytes, &result); err != nil {
+		log.Printf("❌ Failed to parse response: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Data processing error"})
 		return
 	}
 
-	user := result.Data.Users[0]
-
-	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(payload.Password)); err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"message": "Invalid credentials"})
+	if len(result.Users) == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"message": "Invalid email or password"})
 		return
 	}
 
-	// Generate JWT
+	user := result.Users[0]
+	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(input.Password)); err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"message": "Invalid email or password"})
+		return
+	}
+
 	token, err := auth.GenerateJWT(user.ID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to generate token"})
+		log.Printf("❌ Failed to generate token: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Could not generate token"})
 		return
 	}
 
