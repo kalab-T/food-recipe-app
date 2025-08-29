@@ -1,5 +1,12 @@
 import { defineNuxtPlugin, useRuntimeConfig } from '#imports'
-import { ApolloClient, InMemoryCache, HttpLink, ApolloLink, concat, split } from '@apollo/client/core'
+import {
+  ApolloClient,
+  InMemoryCache,
+  HttpLink,
+  ApolloLink,
+  concat,
+  split,
+} from '@apollo/client/core'
 import { getMainDefinition } from '@apollo/client/utilities'
 import { DefaultApolloClient } from '@vue/apollo-composable'
 import { createClient } from 'graphql-ws'
@@ -8,23 +15,15 @@ import { GraphQLWsLink } from '@apollo/client/link/subscriptions'
 export default defineNuxtPlugin((nuxtApp) => {
   const config = useRuntimeConfig()
 
-  const httpLink = new HttpLink({ uri: config.public.hasuraUrl as string })
+  const httpLink = new HttpLink({
+    uri: config.public.hasuraUrl as string,
+  })
 
+  // No JWT for now — always use public role
   const authMiddleware = new ApolloLink((operation, forward) => {
-    const headers: Record<string, string> = {}
-
-    if (process.client) {
-      const token = localStorage.getItem('token')
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`
-      } else {
-        headers['x-hasura-role'] = 'public'
-      }
-    } else {
-      headers['x-hasura-role'] = 'public'
-    }
-
-    operation.setContext({ headers })
+    operation.setContext({
+      headers: { 'x-hasura-role': 'public' }
+    })
     return forward(operation)
   })
 
@@ -33,12 +32,7 @@ export default defineNuxtPlugin((nuxtApp) => {
     new GraphQLWsLink(
       createClient({
         url: config.public.hasuraWsUrl as string,
-        connectionParams: () => {
-          const token = localStorage.getItem('token')
-          return token
-            ? { Authorization: `Bearer ${token}` }
-            : { 'x-hasura-role': 'public' }
-        },
+        connectionParams: { 'x-hasura-role': 'public' },
         retryAttempts: 5,
       })
     )
@@ -55,7 +49,10 @@ export default defineNuxtPlugin((nuxtApp) => {
         )
       : concat(authMiddleware, httpLink)
 
-  const apolloClient = new ApolloClient({ link, cache: new InMemoryCache() })
+  const apolloClient = new ApolloClient({
+    link,
+    cache: new InMemoryCache(),
+  })
 
   nuxtApp.vueApp.provide(DefaultApolloClient, apolloClient)
   nuxtApp.provide('publicApollo', apolloClient)
