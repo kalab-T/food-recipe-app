@@ -7,7 +7,6 @@ import (
 	"log"
 	"net/http"
 	"strings"
-	"time"
 
 	"go-app/auth"
 	"go-app/config"
@@ -52,7 +51,7 @@ func SignupHandler(c *gin.Context) {
 		return
 	}
 
-	// 4. Insert user into Hasura using admin secret
+	// 4. Hasura mutation
 	mutation := `
 		mutation($name: String!, $email: String!, $password: String!) {
 			insert_users_one(object: {name: $name, email: $email, password: $password}) {
@@ -126,14 +125,8 @@ func SignupHandler(c *gin.Context) {
 
 	user := result.Data.InsertUser
 
-	// 5. Generate JWT with proper Hasura claims
-	claims := map[string]interface{}{
-		"x-hasura-allowed-roles": []string{"user", "public"},
-		"x-hasura-default-role":  "user",
-		"x-hasura-user-id":       user.ID,
-	}
+	// 5. Generate JWT using existing auth.GenerateJWT
 	token, err := auth.GenerateJWT(user.ID)
- 
 	if err != nil {
 		log.Printf("❌ Failed to generate token: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "Could not generate token"})
