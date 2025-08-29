@@ -6,34 +6,62 @@ type Recipe = {
   title: string
   description: string
   image: string
-  user: { name: string }
-  likes_aggregate: { aggregate: { count: number } }
+  user: {
+    name: string
+  }
+  likes_aggregate: {
+    aggregate: {
+      count: number
+    }
+  }
 }
 
-export const useRecipes = () => {
+type RecipeResponse = {
+  recipes: Recipe[]
+}
+
+type UseRecipesOptions = {
+  limit?: number
+}
+
+export const useRecipes = ({ limit = 6 }: UseRecipesOptions = {}) => {
   const { $publicApollo } = useNuxtApp()
 
-  const { data, pending, error, refresh } = useAsyncData(
-    'landingRecipes',
+  const { data, pending, error, refresh } = useAsyncData<RecipeResponse>(
+    'landing-recipes',
     async () => {
       const result = await $publicApollo.query({
         query: gql`
-          query GetLandingRecipes {
-            recipes(limit: 6, order_by: { created_at: desc }) {
+          query GetLandingRecipes($limit: Int!) {
+            recipes(limit: $limit, order_by: { created_at: desc }) {
               id
               title
               description
               image
-              user { name }
-              likes_aggregate { aggregate { count } }
+              user {
+                name
+              }
+              likes_aggregate {
+                aggregate {
+                  count
+                }
+              }
             }
           }
         `,
+        variables: {
+          limit,
+        },
         fetchPolicy: 'network-only',
       })
       return result.data
     }
   )
 
-  return { recipes: data, loading: pending, error, refetch: refresh }
+  return {
+    recipes: data,
+    loading: pending,
+    error,
+    refetch: refresh,
+  }
 }
