@@ -1,42 +1,21 @@
-// composables/useSignup.ts
-import { ref } from 'vue'
-import { useRouter } from '#imports'
+import { useAuth } from './useAuth'
 
-export function useSignup() {
-  const loading = ref(false)
-  const error = ref<string | null>(null)
-  const router = useRouter()
+export const useSignup = () => {
+  const { setToken, setUser } = useAuth()
 
   const signup = async (name: string, email: string, password: string) => {
-    loading.value = true
-    error.value = null
+    const res = await $fetch('/api/signup', {
+      method: 'POST',
+      body: { name, email, password }
+    })
 
-    try {
-      const res = await $fetch('/api/signup', {
-        method: 'POST',
-        body: { name, email, password }
-      })
+    if (!res.token) throw new Error('Signup failed')
 
-      if (res?.token) {
-        // store token in cookie or localStorage
-        localStorage.setItem('token', res.token)
+    setToken(res.token)
+    setUser({ id: res.user_id, name, email })
 
-        // ✅ Now Hasura will accept authenticated queries
-        router.push('/')
-      } else {
-        error.value = 'Signup failed. No token received.'
-      }
-    } catch (err: any) {
-      console.error('Signup error:', err)
-      error.value = err?.data?.message || 'Signup failed.'
-    } finally {
-      loading.value = false
-    }
+    return { success: true }
   }
 
-  return {
-    signup,
-    loading,
-    error
-  }
+  return { signup }
 }
