@@ -1,12 +1,5 @@
 import { defineNuxtPlugin, useRuntimeConfig } from '#imports'
-import {
-  ApolloClient,
-  InMemoryCache,
-  HttpLink,
-  ApolloLink,
-  concat,
-  split
-} from '@apollo/client/core'
+import { ApolloClient, InMemoryCache, HttpLink, ApolloLink, concat, split } from '@apollo/client/core'
 import { getMainDefinition } from '@apollo/client/utilities'
 import { DefaultApolloClient } from '@vue/apollo-composable'
 import { createClient } from 'graphql-ws'
@@ -19,10 +12,17 @@ export default defineNuxtPlugin((nuxtApp) => {
 
   const authMiddleware = new ApolloLink((operation, forward) => {
     const headers: Record<string, string> = {}
-    const token = localStorage.getItem('token')
 
-    if (token) headers['Authorization'] = `Bearer ${token}`
-    else headers['x-hasura-role'] = 'public'
+    if (process.client) {
+      const token = localStorage.getItem('token')
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`
+      } else {
+        headers['x-hasura-role'] = 'public'
+      }
+    } else {
+      headers['x-hasura-role'] = 'public'
+    }
 
     operation.setContext({ headers })
     return forward(operation)
@@ -39,7 +39,7 @@ export default defineNuxtPlugin((nuxtApp) => {
             ? { Authorization: `Bearer ${token}` }
             : { 'x-hasura-role': 'public' }
         },
-        retryAttempts: 5
+        retryAttempts: 5,
       })
     )
 
