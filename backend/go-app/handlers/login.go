@@ -4,11 +4,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
-	"log"
 	"net/http"
 	"strings"
 
 	"go-app/config"
+
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -24,30 +24,34 @@ func LoginHandler(c *gin.Context) {
 		return
 	}
 
-	var payload LoginRequest
+	var payload struct {
+		Input LoginRequest `json:"input"`
+	}
+
 	if err := c.ShouldBindJSON(&payload); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid input: " + err.Error()})
 		return
 	}
 
-	email := strings.ToLower(strings.TrimSpace(payload.Email))
-	password := strings.TrimSpace(payload.Password)
+	input := payload.Input
+	input.Email = strings.ToLower(strings.TrimSpace(input.Email))
+	input.Password = strings.TrimSpace(input.Password)
 
+	// Hasura query to fetch user by email
 	query := `
-	query($email: String!) {
-		users(where: {email: {_eq: $email}}) {
-			id
-			name
-			email
-			password
+		query($email: String!) {
+			users(where: {email: {_eq: $email}}) {
+				id
+				name
+				email
+				password
+			}
 		}
-	}`
+	`
 
 	reqBody, _ := json.Marshal(map[string]interface{}{
-		"query": query,
-		"variables": map[string]interface{}{
-			"email": email,
-		},
+		"query":     query,
+		"variables": map[string]interface{}{"email": input.Email},
 	})
 
 	req, _ := http.NewRequest("POST", config.HasuraURL(), bytes.NewBuffer(reqBody))
@@ -84,16 +88,18 @@ func LoginHandler(c *gin.Context) {
 	}
 
 	if len(result.Data.Users) == 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{"message": "Invalid credentials"})
+		c.JSON(http.StatusUnauthorized, gin.H{"message": "Invalid email or password"})
 		return
 	}
 
 	user := result.Data.Users[0]
-	if bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)) != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"message": "Invalid credentials"})
+	err = bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(input.Password))
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"message": "Invalid email or password"})
 		return
 	}
 
+	// Return user info (no JWT yet)
 	c.JSON(http.StatusOK, gin.H{
 		"user_id": user.ID,
 		"name":    user.Name,
