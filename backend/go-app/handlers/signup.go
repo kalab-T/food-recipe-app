@@ -132,7 +132,8 @@ func SignupHandler(c *gin.Context) {
 		"x-hasura-default-role":  "user",
 		"x-hasura-user-id":       user.ID,
 	}
-	token, err := auth.GenerateJWTWithClaims(claims, time.Hour*24) // valid 24h
+	token, err := auth.GenerateJWT(user.ID)
+ 
 	if err != nil {
 		log.Printf("❌ Failed to generate token: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "Could not generate token"})
