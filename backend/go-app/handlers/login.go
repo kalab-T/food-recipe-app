@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	"go-app/auth"
 	"go-app/config"
 
 	"github.com/gin-gonic/gin"
@@ -27,7 +28,6 @@ func LoginHandler(c *gin.Context) {
 	var payload struct {
 		Input LoginRequest `json:"input"`
 	}
-
 	if err := c.ShouldBindJSON(&payload); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid input: " + err.Error()})
 		return
@@ -37,7 +37,6 @@ func LoginHandler(c *gin.Context) {
 	input.Email = strings.ToLower(strings.TrimSpace(input.Email))
 	input.Password = strings.TrimSpace(input.Password)
 
-	// Hasura query to fetch user by email
 	query := `
 		query($email: String!) {
 			users(where: {email: {_eq: $email}}) {
@@ -93,16 +92,21 @@ func LoginHandler(c *gin.Context) {
 	}
 
 	user := result.Data.Users[0]
-	err = bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(input.Password))
-	if err != nil {
+	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(input.Password)); err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"message": "Invalid email or password"})
 		return
 	}
 
-	// Return user info (no JWT yet)
+	token, err := auth.GenerateJWT(user.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Could not generate token"})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"user_id": user.ID,
 		"name":    user.Name,
 		"email":   user.Email,
+		"token":   token,
 	})
 }
