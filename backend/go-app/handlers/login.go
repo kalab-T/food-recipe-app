@@ -3,76 +3,96 @@ package handlers
 import (
 	"bytes"
 	"encoding/json"
+	"io"
+	"log"
 	"net/http"
-	"os"
+	"strings"
+
+	"go-app/auth"
+	"go-app/config"
 
 	"github.com/gin-gonic/gin"
-	"go-app/auth"
+	"golang.org/x/crypto/bcrypt"
 )
 
-type LoginInput struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
+type LoginRequest struct {
+	Email    string `json:"email" binding:"required,email"`
+	Password string `json:"password" binding:"required"`
 }
 
 func LoginHandler(c *gin.Context) {
-	var input LoginInput
-	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid input"})
+	var payload LoginRequest
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid input"})
 		return
 	}
 
-	hasuraURL := os.Getenv("HASURA_URL")
-	adminSecret := os.Getenv("HASURA_ADMIN_SECRET")
+	email := strings.ToLower(strings.TrimSpace(payload.Email))
 
-	query := map[string]interface{}{
-		"query": `query ($email: String!, $password: String!) {
-			users(where: {email: {_eq: $email}, password: {_eq: $password}}) {
-				id
-			}
-		}`,
-		"variables": map[string]string{
-			"email":    input.Email,
-			"password": input.Password,
-		},
-	}
+	// Query user by email using admin-secret
+	query := `
+	query($email: String!) {
+		users(where: {email: {_eq: $email}}) {
+			id
+			password
+			name
+			email
+		}
+	}`
 
-	body, _ := json.Marshal(query)
-	req, _ := http.NewRequest("POST", hasuraURL, bytes.NewBuffer(body))
+	reqBody, _ := json.Marshal(map[string]interface{}{
+		"query":     query,
+		"variables": map[string]interface{}{"email": email},
+	})
+
+	req, _ := http.NewRequest("POST", config.HasuraURL(), bytes.NewBuffer(reqBody))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-hasura-admin-secret", adminSecret) // 🔑 Important
+	req.Header.Set("x-hasura-admin-secret", config.HasuraAdminSecret())
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to contact Hasura"})
+		c.JSON(http.StatusServiceUnavailable, gin.H{"message": "Service unavailable"})
 		return
 	}
 	defer resp.Body.Close()
 
-	var result map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid Hasura response"})
+	bodyBytes, _ := io.ReadAll(resp.Body)
+
+	var result struct {
+		Data struct {
+			Users []struct {
+				ID       string `json:"id"`
+				Password string `json:"password"`
+				Name     string `json:"name"`
+				Email    string `json:"email"`
+			} `json:"users"`
+		} `json:"data"`
+	}
+
+	if err := json.Unmarshal(bodyBytes, &result); err != nil || len(result.Data.Users) == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"message": "Invalid credentials"})
 		return
 	}
 
-	users := result["data"].(map[string]interface{})["users"].([]interface{})
-	if len(users) == 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
+	user := result.Data.Users[0]
+
+	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(payload.Password)); err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"message": "Invalid credentials"})
 		return
 	}
-
-	userID := users[0].(map[string]interface{})["id"].(string)
 
 	// Generate JWT
-	token, err := auth.GenerateJWT(userID)
+	token, err := auth.GenerateJWT(user.ID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to generate token"})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
+		"user_id": user.ID,
+		"name":    user.Name,
+		"email":   user.Email,
 		"token":   token,
-		"user_id": userID,
 	})
 }
