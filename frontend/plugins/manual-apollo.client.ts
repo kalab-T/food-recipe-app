@@ -19,9 +19,9 @@ export default defineNuxtPlugin((nuxtApp) => {
     uri: config.public.hasuraUrl as string,
   })
 
-  // Auth middleware: attach JWT if present, otherwise fallback to "public" role
   const authMiddleware = new ApolloLink((operation, forward) => {
     const headers: Record<string, string> = {}
+
     if (process.client) {
       const token = localStorage.getItem('token')
       if (token) {
@@ -32,11 +32,11 @@ export default defineNuxtPlugin((nuxtApp) => {
     } else {
       headers['x-hasura-role'] = 'public'
     }
+
     operation.setContext({ headers })
     return forward(operation)
   })
 
-  // GraphQL subscriptions (client-side only)
   const wsLink =
     process.client &&
     new GraphQLWsLink(
@@ -52,7 +52,6 @@ export default defineNuxtPlugin((nuxtApp) => {
       })
     )
 
-  // Split link for subscriptions
   const link =
     process.client && wsLink
       ? split(
@@ -70,7 +69,6 @@ export default defineNuxtPlugin((nuxtApp) => {
     cache: new InMemoryCache(),
   })
 
-  // Provide Apollo client globally
   nuxtApp.vueApp.provide(DefaultApolloClient, apolloClient)
   nuxtApp.provide('publicApollo', apolloClient)
 })
