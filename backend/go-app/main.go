@@ -28,19 +28,13 @@ func main() {
 
 	port := config.BackendPort()
 
-	// Read upload directory from env or default
-	uploadDir := os.Getenv("UPLOAD_DIR")
-	if uploadDir == "" {
-		uploadDir = "./static/images"
-	}
-
 	r := gin.Default()
 
-	// ✅ CORS middleware config (allow local + Vercel frontend)
+	// CORS middleware config
 	r.Use(cors.New(cors.Config{
 		AllowOrigins: []string{
-			"http://localhost:3000",
-			"https://food-recipe-app-m7dv.vercel.app",
+			"http://localhost:3000", // local dev
+			"https://food-recipe-kit0a86s8-kalabs-projects-1e20c180.vercel.app", // live Vercel frontend
 		},
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "x-hasura-admin-secret"},
@@ -49,14 +43,21 @@ func main() {
 		MaxAge:           12 * time.Hour,
 	}))
 
-	// ✅ Serve static image files
-	r.Static("/images", uploadDir)
+	// Serve images via route (reliable on Render)
+	r.GET("/images/:filename", func(c *gin.Context) {
+		file := c.Param("filename")
+		wd, err := os.Getwd()
+		if err != nil {
+			log.Printf("❌ Failed to get working directory: %v", err)
+			c.Status(500)
+			return
+		}
+		c.File(wd + "/static/images/" + file)
+	})
 
 	// API Routes
 	r.POST("/signup", handlers.SignupHandler)
 	r.POST("/login", handlers.LoginHandler)
-
-	// ✅ Upload route (no extra args needed)
 	r.POST("/upload", upload.UploadHandler)
 
 	// Start server
