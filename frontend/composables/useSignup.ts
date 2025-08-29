@@ -1,33 +1,42 @@
-import { useAuth } from './useAuth'
+// composables/useSignup.ts
+import { ref } from 'vue'
+import { useRouter } from '#imports'
 
-export const useSignup = () => {
-  const { setToken, setUser } = useAuth()
+export function useSignup() {
+  const loading = ref(false)
+  const error = ref<string | null>(null)
+  const router = useRouter()
 
   const signup = async (name: string, email: string, password: string) => {
+    loading.value = true
+    error.value = null
+
     try {
-      const res = await fetch('/api/signup', { // Backend endpoint
+      const res = await $fetch('/api/signup', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ input: { name, email, password } }),
+        body: { name, email, password }
       })
 
-      const data = await res.json()
+      if (res?.token) {
+        // store token in cookie or localStorage
+        localStorage.setItem('token', res.token)
 
-      if (!res.ok || !data.token) {
-        return { success: false, error: data.message || 'Signup failed' }
+        // ✅ Now Hasura will accept authenticated queries
+        router.push('/')
+      } else {
+        error.value = 'Signup failed. No token received.'
       }
-
-      // Store token in localStorage for Apollo middleware
-      if (process.client) localStorage.setItem('token', data.token)
-
-      setToken(data.token)
-      setUser({ id: data.user_id, name, email })
-
-      return { success: true }
     } catch (err: any) {
-      return { success: false, error: err.message || 'Signup failed' }
+      console.error('Signup error:', err)
+      error.value = err?.data?.message || 'Signup failed.'
+    } finally {
+      loading.value = false
     }
   }
 
-  return { signup }
+  return {
+    signup,
+    loading,
+    error
+  }
 }
