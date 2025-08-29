@@ -21,7 +21,7 @@ export default defineNuxtPlugin((nuxtApp) => {
 
   // Auth middleware: attach JWT if present, otherwise use public role
   const authMiddleware = new ApolloLink((operation, forward) => {
-    let headers: Record<string, string> = {}
+    const headers: Record<string, string> = {}
     if (process.client) {
       const token = localStorage.getItem('token')
       if (token) {
@@ -36,7 +36,7 @@ export default defineNuxtPlugin((nuxtApp) => {
     return forward(operation)
   })
 
-  // GraphQL subscriptions (client-side only)
+  // Subscriptions (only client)
   const wsLink =
     process.client &&
     new GraphQLWsLink(
@@ -44,13 +44,15 @@ export default defineNuxtPlugin((nuxtApp) => {
         url: config.public.hasuraWsUrl as string,
         connectionParams: () => {
           const token = localStorage.getItem('token')
-          return token ? { Authorization: `Bearer ${token}` } : { 'x-hasura-role': 'public' }
+          return token
+            ? { Authorization: `Bearer ${token}` }
+            : { 'x-hasura-role': 'public' }
         },
         retryAttempts: 5,
       })
     )
 
-  // Split link for subscriptions
+  // Choose wsLink for subscriptions, otherwise httpLink
   const link =
     process.client && wsLink
       ? split(
@@ -68,14 +70,9 @@ export default defineNuxtPlugin((nuxtApp) => {
     cache: new InMemoryCache(),
   })
 
-  // Provide Apollo client globally
-  nuxtApp.provide(DefaultApolloClient, apolloClient)
-  nuxtApp.provide('publicApollo', apolloClient)
+  // ✅ Correct way: provide using Symbol and string key separately
+  nuxtApp.vueApp.provide(DefaultApolloClient, apolloClient) // for vue-apollo
+  nuxtApp.provide('publicApollo', apolloClient) // for composables
 
-  return {
-    provide: {
-      apolloClient,
-      publicApollo: apolloClient,
-    },
-  }
+  // ❌ DO NOT return { provide: ... } with the Symbol again (this caused the error)
 })
