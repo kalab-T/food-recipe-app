@@ -1,41 +1,44 @@
-import { gql, useQuery } from '@apollo/client/core'
-import { useNuxtApp } from '#app'
-import { ref } from 'vue'
+import { gql } from 'graphql-tag'
+import { useNuxtApp, useAsyncData } from '#app'
 
-const GET_RECIPES = gql`
-  query GetRecipes {
-    recipes {
+const GET_LANDING_RECIPES = gql`
+  query GetLandingRecipes($limit: Int) {
+    recipes(limit: $limit, order_by: { created_at: desc }) {
       id
       title
       description
       image
-      user_id
+      user {
+        name
+      }
+      likes_aggregate {
+        aggregate {
+          count
+        }
+      }
     }
   }
 `
 
-export const useRecipes = () => {
+export const useRecipes = ({ limit = 6 } = {}) => {
   const { $publicApollo } = useNuxtApp()
-  const recipes = ref([] as any[])
-  const loading = ref(false)
-  const error = ref(null as string | null)
 
-  const fetchRecipes = async () => {
-    loading.value = true
-    try {
-      const { data } = await $publicApollo.query({ query: GET_RECIPES })
-      recipes.value = data.recipes
-    } catch (err: any) {
-      error.value = err.message
-    } finally {
-      loading.value = false
+  const { data, pending, error, refresh } = useAsyncData(
+    ['recipes', limit],
+    async () => {
+      const result = await $publicApollo.query({
+        query: GET_LANDING_RECIPES,
+        variables: { limit },
+        fetchPolicy: 'network-only',
+      })
+      return result.data
     }
-  }
+  )
 
   return {
-    recipes,
-    loading,
+    recipes: data,
+    loading: pending,
     error,
-    fetchRecipes,
+    refetch: refresh,
   }
 }
