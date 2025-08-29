@@ -19,16 +19,17 @@ export default defineNuxtPlugin((nuxtApp) => {
     uri: config.public.hasuraUrl as string,
   })
 
+  // Middleware to add JWT or public role
   const authMiddleware = new ApolloLink((operation, forward) => {
     const headers: Record<string, string> = {}
 
+    let token: string | null = null
     if (process.client) {
-      const token = localStorage.getItem('token')
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`
-      } else {
-        headers['x-hasura-role'] = 'public'
-      }
+      token = localStorage.getItem('token')
+    }
+
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`
     } else {
       headers['x-hasura-role'] = 'public'
     }
@@ -37,6 +38,7 @@ export default defineNuxtPlugin((nuxtApp) => {
     return forward(operation)
   })
 
+  // WebSocket link for subscriptions (client-only)
   const wsLink =
     process.client &&
     new GraphQLWsLink(
