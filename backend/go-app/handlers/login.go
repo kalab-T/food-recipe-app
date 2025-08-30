@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 
@@ -14,40 +15,37 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-type LoginRequest struct {
-	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required"`
-}
-
+// LoginHandler handles Hasura login action
 func LoginHandler(c *gin.Context) {
 	if config.HasuraURL() == "" || config.HasuraAdminSecret() == "" {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "Server configuration error"})
 		return
 	}
 
-	var payload struct {
-		Input LoginRequest `json:"input"`
+	// Hasura sends top-level input
+	var input struct {
+		Email    string `json:"email" binding:"required,email"`
+		Password string `json:"password" binding:"required"`
 	}
-	if err := c.ShouldBindJSON(&payload); err != nil {
+
+	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid input: " + err.Error()})
 		return
 	}
 
-	input := payload.Input
 	input.Email = strings.ToLower(strings.TrimSpace(input.Email))
 	input.Password = strings.TrimSpace(input.Password)
 
-	// Query user by email
+	// Query user from Hasura
 	query := `
-		query ($email: String!) {
-			users(where: {email: {_eq: $email}}) {
-				id
-				name
-				email
-				password
-			}
+	query($email: String!) {
+		users(where: {email: {_eq: $email}}) {
+			id
+			name
+			email
+			password
 		}
-	`
+	}`
 
 	reqBody, _ := json.Marshal(map[string]interface{}{
 		"query":     query,
@@ -67,6 +65,7 @@ func LoginHandler(c *gin.Context) {
 	defer resp.Body.Close()
 
 	bodyBytes, _ := io.ReadAll(resp.Body)
+	log.Printf("🔍 Hasura login response: %s", string(bodyBytes))
 
 	var result struct {
 		Data struct {
@@ -83,6 +82,7 @@ func LoginHandler(c *gin.Context) {
 	}
 
 	if err := json.Unmarshal(bodyBytes, &result); err != nil {
+		log.Printf("❌ Parse error: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "Data processing error"})
 		return
 	}
@@ -103,10 +103,12 @@ func LoginHandler(c *gin.Context) {
 	// Generate JWT
 	token, err := auth.GenerateJWT(user.ID)
 	if err != nil {
+		log.Printf("❌ Failed to generate token: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "Could not generate token"})
 		return
 	}
 
+	// Respond with Hasura action format
 	c.JSON(http.StatusOK, gin.H{
 		"user_id": user.ID,
 		"name":    user.Name,
