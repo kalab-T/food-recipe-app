@@ -15,19 +15,21 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-type SignupRequest struct {
-	Name     string `json:"name" binding:"required"`
-	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required,min=8"`
-}
-
+// SignupHandler handles Hasura signup action
 func SignupHandler(c *gin.Context) {
 	if config.HasuraURL() == "" || config.HasuraAdminSecret() == "" {
+		log.Println("❌ Hasura config missing")
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "Server configuration error"})
 		return
 	}
 
-	var input SignupRequest
+	// Hasura sends top-level input
+	var input struct {
+		Name     string `json:"name" binding:"required"`
+		Email    string `json:"email" binding:"required,email"`
+		Password string `json:"password" binding:"required,min=8"`
+	}
+
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid input: " + err.Error()})
 		return
@@ -36,18 +38,19 @@ func SignupHandler(c *gin.Context) {
 	input.Email = strings.ToLower(strings.TrimSpace(input.Email))
 	input.Password = strings.TrimSpace(input.Password)
 
+	// Hash password
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(input.Password), 12)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to hash password"})
+		log.Printf("❌ Hashing failed: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to secure password"})
 		return
 	}
 
+	// Insert user into Hasura
 	mutation := `
 	mutation ($name: String!, $email: String!, $password: String!) {
 		insert_users_one(object: {name: $name, email: $email, password: $password}) {
 			id
-			name
-			email
 		}
 	}
 	`
@@ -68,20 +71,19 @@ func SignupHandler(c *gin.Context) {
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"message": "Hasura unavailable"})
+		log.Printf("❌ Hasura connection failed: %v", err)
+		c.JSON(http.StatusServiceUnavailable, gin.H{"message": "Service unavailable"})
 		return
 	}
 	defer resp.Body.Close()
 
 	bodyBytes, _ := io.ReadAll(resp.Body)
-	log.Printf("Hasura response: %s", string(bodyBytes))
+	log.Printf("🔍 Hasura signup response: %s", string(bodyBytes))
 
 	var result struct {
 		Data struct {
-			InsertUsersOne struct {
-				ID    string `json:"id"`
-				Name  string `json:"name"`
-				Email string `json:"email"`
+			InsertUser struct {
+				ID string `json:"id"`
 			} `json:"insert_users_one"`
 		} `json:"data"`
 		Errors []struct {
@@ -90,35 +92,33 @@ func SignupHandler(c *gin.Context) {
 	}
 
 	if err := json.Unmarshal(bodyBytes, &result); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to parse Hasura response"})
+		log.Printf("❌ Parse error: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Data processing error"})
 		return
 	}
 
 	if len(result.Errors) > 0 {
-		msg := result.Errors[0].Message
-		if strings.Contains(strings.ToLower(msg), "duplicate") {
-			msg = "Email already registered"
+		errorMsg := result.Errors[0].Message
+		if strings.Contains(strings.ToLower(errorMsg), "duplicate") {
+			errorMsg = "Email already registered"
 		}
-		c.JSON(http.StatusConflict, gin.H{"message": msg})
+		c.JSON(http.StatusConflict, gin.H{"message": errorMsg})
 		return
 	}
 
-	user := result.Data.InsertUsersOne
-	if user.ID == "" {
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "User not created"})
-		return
-	}
+	userID := result.Data.InsertUser.ID
 
-	token, err := auth.GenerateJWT(user.ID)
+	// Generate JWT
+	token, err := auth.GenerateJWT(userID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to generate token"})
+		log.Printf("❌ Failed to generate token: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Could not generate token"})
 		return
 	}
 
-	c.JSON(http.StatusCreated, gin.H{
-		"user_id": user.ID,
-		"name":    user.Name,
-		"email":   user.Email,
+	// Respond with Hasura action format
+	c.JSON(http.StatusOK, gin.H{
+		"user_id": userID,
 		"token":   token,
 	})
 }
