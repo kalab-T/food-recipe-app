@@ -1,18 +1,15 @@
 import { useAuth } from './useAuth'
-import { useRuntimeConfig } from '#app'
 
 export const useSignup = () => {
   const { setToken, setUser } = useAuth()
-  const config = useRuntimeConfig()
 
   const signup = async (name: string, email: string, password: string) => {
     try {
-      const res = await fetch(`${config.public.apiBase}/signup`, {
+      // Hasura action expects top-level fields: name, email, password
+      const res = await fetch('/api/signup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          input: { name, email, password },
-        }),
+        body: JSON.stringify({ name, email, password }),
       })
 
       const data = await res.json()
@@ -22,9 +19,7 @@ export const useSignup = () => {
       }
 
       // Save token & user locally
-      if (data.token) {
-        setToken(data.token)
-      }
+      if (data.token) setToken(data.token)
       setUser({ id: data.user_id, name: data.name, email: data.email })
 
       return { success: true }
