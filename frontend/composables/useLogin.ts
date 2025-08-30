@@ -5,15 +5,16 @@ export const useLogin = () => {
 
   const login = async (email: string, password: string) => {
     try {
-      // Hasura action expects top-level fields: email, password
+      // Send data inside `input` object
       const res = await fetch('/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({
+          input: { email, password }
+        }),
       })
 
       const data = await res.json()
-
       if (!res.ok) {
         return { success: false, error: data.message || 'Login failed' }
       }
