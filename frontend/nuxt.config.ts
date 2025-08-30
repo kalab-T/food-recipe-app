@@ -5,7 +5,7 @@ export default defineNuxtConfig({
 
   runtimeConfig: {
     public: {
-      // ✅ Use Render Hasura URL in production
+      // ✅ Hasura GraphQL endpoint (still used for recipes, etc.)
       hasuraUrl:
         process.env.NUXT_PUBLIC_HASURA_URL ||
         'https://hasura-backend-l2yi.onrender.com/v1/graphql',
@@ -17,9 +17,9 @@ export default defineNuxtConfig({
       hasuraAdminSecret:
         process.env.NUXT_PUBLIC_HASURA_ADMIN_SECRET || 'adminsecret',
 
-      // ✅ Use Render backend API instead of localhost
-      apiBase:
-        process.env.NUXT_PUBLIC_API_BASE ||
+      // ✅ Go backend API (for signup/login)
+      backendUrl:
+        process.env.NUXT_PUBLIC_BACKEND_URL ||
         'https://food-recipe-appp.onrender.com',
     },
   },
