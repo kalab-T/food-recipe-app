@@ -22,43 +22,36 @@ type SignupRequest struct {
 }
 
 func SignupHandler(c *gin.Context) {
-	// require config
 	if config.HasuraURL() == "" || config.HasuraAdminSecret() == "" {
-		log.Println("❌ Hasura config missing")
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "Server configuration error"})
 		return
 	}
 
-	var payload struct {
-		Input SignupRequest `json:"input"`
-	}
-	if err := c.ShouldBindJSON(&payload); err != nil {
+	var input SignupRequest
+	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid input: " + err.Error()})
 		return
 	}
 
-	input := payload.Input
 	input.Email = strings.ToLower(strings.TrimSpace(input.Email))
 	input.Password = strings.TrimSpace(input.Password)
 
-	// Hash password
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(input.Password), 12)
 	if err != nil {
-		log.Printf("❌ Hashing failed: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to secure password"})
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to hash password"})
 		return
 	}
 
-	// Insert user into Hasura using admin secret
 	mutation := `
-		mutation ($name: String!, $email: String!, $password: String!) {
-			insert_users_one(object: {name: $name, email: $email, password: $password}) {
-				id
-				name
-				email
-			}
+	mutation ($name: String!, $email: String!, $password: String!) {
+		insert_users_one(object: {name: $name, email: $email, password: $password}) {
+			id
+			name
+			email
 		}
+	}
 	`
+
 	reqBody, _ := json.Marshal(map[string]interface{}{
 		"query": mutation,
 		"variables": map[string]interface{}{
@@ -75,26 +68,17 @@ func SignupHandler(c *gin.Context) {
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Printf("❌ Hasura connection failed: %v", err)
-		c.JSON(http.StatusServiceUnavailable, gin.H{"message": "Service unavailable"})
+		c.JSON(http.StatusServiceUnavailable, gin.H{"message": "Hasura unavailable"})
 		return
 	}
 	defer resp.Body.Close()
 
 	bodyBytes, _ := io.ReadAll(resp.Body)
-	log.Printf("🔍 Hasura signup response: %s", string(bodyBytes))
-
-	if resp.StatusCode != http.StatusOK {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"message": "Registration failed",
-			"detail":  string(bodyBytes),
-		})
-		return
-	}
+	log.Printf("Hasura response: %s", string(bodyBytes))
 
 	var result struct {
 		Data struct {
-			InsertUser struct {
+			InsertUsersOne struct {
 				ID    string `json:"id"`
 				Name  string `json:"name"`
 				Email string `json:"email"`
@@ -106,27 +90,28 @@ func SignupHandler(c *gin.Context) {
 	}
 
 	if err := json.Unmarshal(bodyBytes, &result); err != nil {
-		log.Printf("❌ Parse error: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "Data processing error"})
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to parse Hasura response"})
 		return
 	}
 
 	if len(result.Errors) > 0 {
-		errorMsg := result.Errors[0].Message
-		if strings.Contains(strings.ToLower(errorMsg), "duplicate") {
-			errorMsg = "Email already registered"
+		msg := result.Errors[0].Message
+		if strings.Contains(strings.ToLower(msg), "duplicate") {
+			msg = "Email already registered"
 		}
-		c.JSON(http.StatusConflict, gin.H{"message": errorMsg})
+		c.JSON(http.StatusConflict, gin.H{"message": msg})
 		return
 	}
 
-	user := result.Data.InsertUser
+	user := result.Data.InsertUsersOne
+	if user.ID == "" {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "User not created"})
+		return
+	}
 
-	// Generate JWT for this user using your auth package
 	token, err := auth.GenerateJWT(user.ID)
 	if err != nil {
-		log.Printf("❌ Failed to generate token: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "Could not generate token"})
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to generate token"})
 		return
 	}
 
