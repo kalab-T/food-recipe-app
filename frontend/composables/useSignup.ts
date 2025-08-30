@@ -5,20 +5,20 @@ export const useSignup = () => {
 
   const signup = async (name: string, email: string, password: string) => {
     try {
-      // Hasura action expects top-level fields: name, email, password
+      // Send data inside `input` object
       const res = await fetch('/api/signup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, email, password }),
+        body: JSON.stringify({
+          input: { name, email, password }
+        }),
       })
 
       const data = await res.json()
-
       if (!res.ok) {
         return { success: false, error: data.message || 'Signup failed' }
       }
 
-      // Save token & user locally
       if (data.token) setToken(data.token)
       setUser({ id: data.user_id, name: data.name, email: data.email })
 
