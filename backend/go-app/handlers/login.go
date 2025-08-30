@@ -37,8 +37,9 @@ func LoginHandler(c *gin.Context) {
 	input.Email = strings.ToLower(strings.TrimSpace(input.Email))
 	input.Password = strings.TrimSpace(input.Password)
 
+	// Query user by email
 	query := `
-		query($email: String!) {
+		query ($email: String!) {
 			users(where: {email: {_eq: $email}}) {
 				id
 				name
@@ -92,11 +93,14 @@ func LoginHandler(c *gin.Context) {
 	}
 
 	user := result.Data.Users[0]
+
+	// Compare hashed password
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(input.Password)); err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"message": "Invalid email or password"})
 		return
 	}
 
+	// Generate JWT
 	token, err := auth.GenerateJWT(user.ID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "Could not generate token"})
