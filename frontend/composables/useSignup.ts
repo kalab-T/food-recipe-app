@@ -7,14 +7,19 @@ export const useSignup = () => {
 
   const signup = async (name: string, email: string, password: string) => {
     try {
-      const res = await $fetch(`${$config.public.backendUrl}/signup`, {
+      // Directly call Go backend
+      const res: {
+        user_id: string
+        name?: string
+        email?: string
+        token: string
+      } = await $fetch(`${$config.public.backendUrl}/signup`, {
         method: 'POST',
         body: {
           input: { name, email, password } // Go backend expects this
         }
       })
 
-      // backend returns { user_id, name, email, token }
       if (res?.token) {
         setToken(res.token)
         setUser({
