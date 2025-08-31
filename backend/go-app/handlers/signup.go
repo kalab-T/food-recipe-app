@@ -1,124 +1,116 @@
-package handlers
+package auth
 
 import (
 	"bytes"
 	"encoding/json"
-	"io"
-	"log"
 	"net/http"
+	"os"
 	"strings"
 
-	"go-app/auth"
-	"go-app/config"
-
-	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
 )
 
-// SignupHandler handles Hasura signup action
-func SignupHandler(c *gin.Context) {
-	if config.HasuraURL() == "" || config.HasuraAdminSecret() == "" {
-		log.Println("❌ Hasura config missing")
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "Server configuration error"})
+type GraphQLRequest struct {
+	OperationName string          `json:"operationName"`
+	Query         string          `json:"query"`
+	Variables     SignupInputVars `json:"variables"`
+}
+
+type SignupInputVars struct {
+	Name     string `json:"name" validate:"required"`
+	Email    string `json:"email" validate:"required,email"`
+	Password string `json:"password" validate:"required"`
+}
+
+func SignupHandler(w http.ResponseWriter, r *http.Request) {
+	// Load Hasura config from environment
+	hasuraURL := os.Getenv("HASURA_URL")
+	hasuraAdminSecret := os.Getenv("HASURA_GRAPHQL_ADMIN_SECRET")
+
+	if hasuraURL == "" || hasuraAdminSecret == "" {
+		http.Error(w, "Hasura configuration not set", http.StatusInternalServerError)
 		return
 	}
 
-	// Hasura sends top-level input
-	var input struct {
-		Name     string `json:"name" binding:"required"`
-		Email    string `json:"email" binding:"required,email"`
-		Password string `json:"password" binding:"required,min=8"`
-	}
-
-	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid input: " + err.Error()})
+	var gqlReq GraphQLRequest
+	if err := json.NewDecoder(r.Body).Decode(&gqlReq); err != nil {
+		http.Error(w, "Invalid request payload", http.StatusBadRequest)
 		return
 	}
 
-	input.Email = strings.ToLower(strings.TrimSpace(input.Email))
-	input.Password = strings.TrimSpace(input.Password)
+	// Extract variables
+	input := gqlReq.Variables
+
+	// Validate fields
+	if strings.TrimSpace(input.Name) == "" || strings.TrimSpace(input.Email) == "" || strings.TrimSpace(input.Password) == "" {
+		http.Error(w, "Missing required fields", http.StatusBadRequest)
+		return
+	}
 
 	// Hash password
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(input.Password), 12)
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
 	if err != nil {
-		log.Printf("❌ Hashing failed: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to secure password"})
+		http.Error(w, "Error hashing password", http.StatusInternalServerError)
 		return
 	}
 
-	// Insert user into Hasura
+	// GraphQL mutation to insert user into Hasura
 	mutation := `
-	mutation ($name: String!, $email: String!, $password: String!) {
-		insert_users_one(object: {name: $name, email: $email, password: $password}) {
-			id
+		mutation($name: String!, $email: String!, $password: String!) {
+			insert_users_one(object: {name: $name, email: $email, password: $password}) {
+				id
+				name
+				email
+			}
 		}
-	}
 	`
 
-	reqBody, _ := json.Marshal(map[string]interface{}{
+	payload := map[string]interface{}{
 		"query": mutation,
 		"variables": map[string]interface{}{
 			"name":     input.Name,
 			"email":    input.Email,
 			"password": string(hashedPassword),
 		},
-	})
+	}
 
-	req, _ := http.NewRequest("POST", config.HasuraURL(), bytes.NewBuffer(reqBody))
+	payloadBytes, _ := json.Marshal(payload)
+
+	req, err := http.NewRequest("POST", hasuraURL, bytes.NewBuffer(payloadBytes))
+	if err != nil {
+		http.Error(w, "Failed to create Hasura request", http.StatusInternalServerError)
+		return
+	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-hasura-admin-secret", config.HasuraAdminSecret())
+	req.Header.Set("x-hasura-admin-secret", hasuraAdminSecret)
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Printf("❌ Hasura connection failed: %v", err)
-		c.JSON(http.StatusServiceUnavailable, gin.H{"message": "Service unavailable"})
+		http.Error(w, "Failed to send request to Hasura", http.StatusInternalServerError)
 		return
 	}
 	defer resp.Body.Close()
 
-	bodyBytes, _ := io.ReadAll(resp.Body)
-	log.Printf("🔍 Hasura signup response: %s", string(bodyBytes))
-
-	var result struct {
-		Data struct {
-			InsertUser struct {
-				ID string `json:"id"`
-			} `json:"insert_users_one"`
-		} `json:"data"`
-		Errors []struct {
-			Message string `json:"message"`
-		} `json:"errors"`
-	}
-
-	if err := json.Unmarshal(bodyBytes, &result); err != nil {
-		log.Printf("❌ Parse error: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "Data processing error"})
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		http.Error(w, "Failed to parse Hasura response", http.StatusInternalServerError)
 		return
 	}
 
-	if len(result.Errors) > 0 {
-		errorMsg := result.Errors[0].Message
-		if strings.Contains(strings.ToLower(errorMsg), "duplicate") {
-			errorMsg = "Email already registered"
-		}
-		c.JSON(http.StatusConflict, gin.H{"message": errorMsg})
-		return
+	// Simulate JWT token creation (replace with real JWT logic later)
+	token := "dummy-jwt-token"
+
+	// Build GraphQL-style response
+	response := map[string]interface{}{
+		"data": map[string]interface{}{
+			"signup": map[string]interface{}{
+				"user":  result["data"], // inserted user info
+				"token": token,
+			},
+		},
 	}
 
-	userID := result.Data.InsertUser.ID
-
-	// Generate JWT
-	token, err := auth.GenerateJWT(userID)
-	if err != nil {
-		log.Printf("❌ Failed to generate token: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "Could not generate token"})
-		return
-	}
-
-	// Respond with Hasura action format
-	c.JSON(http.StatusOK, gin.H{
-		"user_id": userID,
-		"token":   token,
-	})
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
 }
