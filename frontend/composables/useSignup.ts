@@ -2,38 +2,45 @@ import { useAuth } from './useAuth'
 import { useNuxtApp } from '#app'
 
 export const useSignup = () => {
+  const { $fetch } = useNuxtApp()
   const { setToken, setUser } = useAuth()
-  const { $config } = useNuxtApp()
 
   const signup = async (name: string, email: string, password: string) => {
     try {
-      // Directly call Go backend
-      const res: {
-        user_id: string
-        name?: string
-        email?: string
-        token: string
-      } = await $fetch(`${$config.public.backendUrl}/signup`, {
+      // Call Nuxt API route /api/signup, which proxies to Go backend
+      const res = await $fetch('/api/signup', {
         method: 'POST',
         body: {
-          input: { name, email, password } // Go backend expects this
+          input: { name, email, password }
         }
       })
 
-      if (res?.token) {
-        setToken(res.token)
-        setUser({
-          id: res.user_id,
-          name: name,   // store locally from input
-          email: email, // store locally from input
-        })
-        return { success: true }
+      console.log('Signup response:', res)
+
+      if (!res || !res.user_id || !res.token) {
+        return {
+          success: false,
+          error: 'Signup failed. Invalid response from server.'
+        }
       }
 
-      return { success: false, error: 'Signup failed. Invalid response.' }
-    } catch (err: any) {
-      console.error('Signup error:', err)
-      return { success: false, error: err.message || 'Server error' }
+      // Save the token in auth composable
+      setToken(res.token)
+
+      // Save user locally using input values (backend no longer returns name/email)
+      setUser({
+        id: res.user_id,
+        name,
+        email
+      })
+
+      return { success: true }
+    } catch (error: any) {
+      console.error('Signup API error:', error)
+      return {
+        success: false,
+        error: error.message || 'Signup failed due to server error'
+      }
     }
   }
 
