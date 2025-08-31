@@ -1,30 +1,62 @@
+import { gql } from '@apollo/client/core'
 import { useAuth } from './useAuth'
+import { useNuxtApp } from '#app'
+
+const SIGNUP_MUTATION = gql`
+  mutation Signup($name: String!, $email: String!, $password: String!) {
+    signup(input: { name: $name, email: $email, password: $password }) {
+      token
+      user {
+        id
+        name
+        email
+      }
+    }
+  }
+`
 
 export const useSignup = () => {
+  const { $publicApollo } = useNuxtApp()
   const { setToken, setUser } = useAuth()
 
   const signup = async (name: string, email: string, password: string) => {
     try {
-      // Send data inside `input` object
-      const res = await fetch('/api/signup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          input: { name, email, password }
-        }),
+      const { data, errors } = await $publicApollo.mutate({
+        mutation: SIGNUP_MUTATION,
+        variables: { name, email, password },
       })
 
-      const data = await res.json()
-      if (!res.ok) {
-        return { success: false, error: data.message || 'Signup failed' }
+      console.log('Signup mutation response data:', data)
+      if (errors && errors.length > 0) {
+        console.error('Signup mutation GraphQL errors:', errors)
+        return {
+          success: false,
+          error: errors.map(e => e.message).join(', '),
+        }
       }
 
-      if (data.token) setToken(data.token)
-      setUser({ id: data.user_id, name: data.name, email: data.email })
+      if (data?.signup?.token && data.signup.user) {
+        // Save the token in your auth composable
+        setToken(data.signup.token)
 
-      return { success: true }
-    } catch (err: any) {
-      return { success: false, error: err.message || 'Signup failed' }
+        // Set the user based on backend response
+        setUser({
+          id: data.signup.user.id,
+          name: data.signup.user.name,
+          email: data.signup.user.email,
+        })
+
+        return { success: true }
+      }
+
+      // If no token or no user, treat as failure
+      return { success: false, error: 'Signup failed. Invalid response.' }
+    } catch (error: any) {
+      console.error('Apollo signup error:', error)
+      return {
+        success: false,
+        error: error.message || 'Signup failed due to server error',
+      }
     }
   }
 
