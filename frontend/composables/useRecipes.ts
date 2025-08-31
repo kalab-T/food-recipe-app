@@ -1,44 +1,39 @@
-import { gql } from 'graphql-tag'
-import { useNuxtApp, useAsyncData } from '#app'
+import { useAuth } from './useAuth'
+import { useNuxtApp } from '#app'
 
-const GET_LANDING_RECIPES = gql`
-  query GetLandingRecipes($limit: Int) {
-    recipes(limit: $limit, order_by: { created_at: desc }) {
-      id
-      title
-      description
-      image
-      user {
-        name
-      }
-      likes_aggregate {
-        aggregate {
-          count
-        }
-      }
-    }
-  }
-`
+interface SignupResult {
+  success: boolean
+  error?: string
+}
 
-export const useRecipes = ({ limit = 6 } = {}) => {
-  const { $publicApollo } = useNuxtApp()
+export const useSignup = () => {
+  const { $fetch } = useNuxtApp()
+  const { setToken, setUser } = useAuth()
 
-  const { data, pending, error, refresh } = useAsyncData(
-    ['recipes', limit],
-    async () => {
-      const result = await $publicApollo.query({
-        query: GET_LANDING_RECIPES,
-        variables: { limit },
-        fetchPolicy: 'network-only',
+  const signup = async (name: string, email: string, password: string): Promise<SignupResult> => {
+    try {
+      const res = await $fetch('/api/signup', {
+        method: 'POST',
+        body: { input: { name, email, password } },
       })
-      return result.data
-    }
-  )
 
-  return {
-    recipes: data,
-    loading: pending,
-    error,
-    refetch: refresh,
+      console.log('Signup response:', res)
+
+      if (!res || typeof res !== 'object' || !('user_id' in res) || !('token' in res)) {
+        return { success: false, error: 'Invalid response from server' }
+      }
+
+      const { user_id, token } = res as { user_id: string; token: string }
+
+      setToken(token)
+      setUser({ id: user_id, name, email })
+
+      return { success: true }
+    } catch (error: any) {
+      console.error('Signup API error:', error)
+      return { success: false, error: error?.message || 'Signup failed due to server error' }
+    }
   }
+
+  return { signup }
 }
