@@ -5,7 +5,7 @@ export default defineEventHandler(async (event) => {
   const backendUrl = config.public.backendUrl
 
   try {
-    // Forward input to Go backend
+    // Forward the input to Go backend
     const res = await $fetch(`${backendUrl}/signup`, {
       method: 'POST',
       body: {
