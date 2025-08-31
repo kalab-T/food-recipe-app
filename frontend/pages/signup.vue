@@ -55,11 +55,11 @@ import { useRouter } from 'vue-router'
 import { useSignup } from '~/composables/useSignup'
 
 const router = useRouter()
+const { signup } = useSignup()
+
 const isSubmitting = ref(false)
 const signupError = ref<string | null>(null)
 const schema = ref<yup.AnyObjectSchema>()
-
-const { signup } = useSignup()
 
 onMounted(() => {
   schema.value = yup.object({
@@ -73,38 +73,24 @@ onMounted(() => {
   })
 })
 
-interface SignupFormValues {
-  name: string
-  email: string
-  password: string
-  confirmPassword: string
-}
-
-async function onSubmit(values: SignupFormValues) {
+async function onSubmit(values: { name: string; email: string; password: string; confirmPassword: string }) {
   isSubmitting.value = true
   signupError.value = null
 
-  try {
-    const { name, email, password } = values
-    const result = await signup(name, email, password)
+  const { name, email, password } = values
+  const result = await signup(name, email, password)
 
-    if (result.success) {
-      router.push('/login')
-    } else {
-      signupError.value = result.error || 'Signup failed'
-    }
-  } catch (err: any) {
-    console.error('Unexpected error in signup:', err)
-    signupError.value = err.message || 'Unexpected error occurred.'
-  } finally {
-    isSubmitting.value = false
+  if (result.success) {
+    router.push('/login')
+  } else {
+    signupError.value = result.error || 'Signup failed'
   }
+
+  isSubmitting.value = false
 }
 
-/**
- * Wraps VeeValidate handleSubmit to use TypeScript correctly
- */
-function submitHandler(handleSubmit: (onSubmit: (values: SignupFormValues) => Promise<void>) => (e?: Event) => Promise<void>) {
+// Wrapper to call handleSubmit correctly in template
+function submitHandler(handleSubmit: (onSubmit: (values: any) => Promise<void>) => (e?: Event) => Promise<void>) {
   return handleSubmit(onSubmit)
 }
 </script>
