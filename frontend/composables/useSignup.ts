@@ -7,40 +7,29 @@ export const useSignup = () => {
 
   const signup = async (name: string, email: string, password: string) => {
     try {
-      // Call Nuxt API route /api/signup, which proxies to Go backend
       const res = await $fetch('/api/signup', {
         method: 'POST',
-        body: {
-          input: { name, email, password }
-        }
+        body: { input: { name, email, password } },
       })
 
       console.log('Signup response:', res)
 
       if (!res || !res.user_id || !res.token) {
-        return {
-          success: false,
-          error: 'Signup failed. Invalid response from server.'
-        }
+        return { success: false, error: 'Signup failed. Invalid server response.' }
       }
 
-      // Save the token in auth composable
+      // Save token and user info locally
       setToken(res.token)
-
-      // Save user locally using input values (backend no longer returns name/email)
       setUser({
         id: res.user_id,
         name,
-        email
+        email,
       })
 
       return { success: true }
-    } catch (error: any) {
-      console.error('Signup API error:', error)
-      return {
-        success: false,
-        error: error.message || 'Signup failed due to server error'
-      }
+    } catch (err: any) {
+      console.error('Signup API error:', err)
+      return { success: false, error: err.message || 'Server error' }
     }
   }
 
