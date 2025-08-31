@@ -7,30 +7,36 @@ import (
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
-	"github.com/joho/godotenv"
-	"go-app/config"
 	"go-app/handlers"
 	"go-app/upload"
 )
 
 func main() {
-	// Load .env
-	if err := godotenv.Load(); err != nil {
-		log.Println("⚠️ No .env file found (proceeding with system env vars)")
-	} else {
-		log.Println("✅ .env file loaded")
+	// Load PORT from environment or fallback to 8080
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+		log.Println("⚠️ PORT env not set, defaulting to 8080")
 	}
 
-	port := config.BackendPort()
-	uploadDir := os.Getenv("UPLOAD_DIR")
-	if uploadDir == "" {
-		uploadDir = "./static/images"
+	hasuraURL := os.Getenv("HASURA_URL")
+	hasuraAdminSecret := os.Getenv("HASURA_GRAPHQL_ADMIN_SECRET")
+	if hasuraURL == "" || hasuraAdminSecret == "" {
+		log.Println("⚠️ Hasura config missing")
+	} else {
+		log.Printf("✅ Hasura URL: %s", hasuraURL)
+	}
+
+	frontendOrigin := os.Getenv("FRONTEND_URL")
+	if frontendOrigin == "" {
+		frontendOrigin = "http://localhost:3000"
 	}
 
 	r := gin.Default()
 
+	// CORS middleware config
 	r.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://localhost:3000", "https://food-recipe-app-m7dv.vercel.app"},
+		AllowOrigins:     []string{frontendOrigin},
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "x-hasura-admin-secret"},
 		ExposeHeaders:    []string{"Content-Length"},
@@ -38,16 +44,16 @@ func main() {
 		MaxAge:           12 * time.Hour,
 	}))
 
-	r.Static("/images", uploadDir)
+	// Serve static image files
+	r.Static("/images", "./static/images")
 
-	// API routes
+	// API Routes
 	r.POST("/signup", handlers.SignupHandler)
 	r.POST("/login", handlers.LoginHandler)
-
-	// Upload route
 	r.POST("/upload", upload.UploadHandler)
 
-	log.Printf("🚀 Server running on port %s\n", port)
+	// Start server
+	log.Printf("🚀 Server running on port %s", port)
 	if err := r.Run(":" + port); err != nil {
 		log.Fatalf("❌ Failed to start server: %v", err)
 	}
