@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -22,39 +23,38 @@ type SignupInputVars struct {
 	Password string `json:"password" validate:"required"`
 }
 
-func SignupHandler(w http.ResponseWriter, r *http.Request) {
+func SignupHandler(c *gin.Context) {
 	// Load Hasura config from environment
 	hasuraURL := os.Getenv("HASURA_URL")
 	hasuraAdminSecret := os.Getenv("HASURA_GRAPHQL_ADMIN_SECRET")
 
 	if hasuraURL == "" || hasuraAdminSecret == "" {
-		http.Error(w, "Hasura configuration not set", http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Hasura configuration not set"})
 		return
 	}
 
 	var gqlReq GraphQLRequest
-	if err := json.NewDecoder(r.Body).Decode(&gqlReq); err != nil {
-		http.Error(w, "Invalid request payload", http.StatusBadRequest)
+	if err := c.BindJSON(&gqlReq); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload"})
 		return
 	}
 
-	// Extract variables
 	input := gqlReq.Variables
 
 	// Validate fields
 	if strings.TrimSpace(input.Name) == "" || strings.TrimSpace(input.Email) == "" || strings.TrimSpace(input.Password) == "" {
-		http.Error(w, "Missing required fields", http.StatusBadRequest)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing required fields"})
 		return
 	}
 
 	// Hash password
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
 	if err != nil {
-		http.Error(w, "Error hashing password", http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error hashing password"})
 		return
 	}
 
-	// GraphQL mutation to insert user into Hasura
+	// GraphQL mutation
 	mutation := `
 		mutation($name: String!, $email: String!, $password: String!) {
 			insert_users_one(object: {name: $name, email: $email, password: $password}) {
@@ -78,7 +78,7 @@ func SignupHandler(w http.ResponseWriter, r *http.Request) {
 
 	req, err := http.NewRequest("POST", hasuraURL, bytes.NewBuffer(payloadBytes))
 	if err != nil {
-		http.Error(w, "Failed to create Hasura request", http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create Hasura request"})
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
@@ -87,30 +87,29 @@ func SignupHandler(w http.ResponseWriter, r *http.Request) {
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		http.Error(w, "Failed to send request to Hasura", http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to send request to Hasura"})
 		return
 	}
 	defer resp.Body.Close()
 
 	var result map[string]interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		http.Error(w, "Failed to parse Hasura response", http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse Hasura response"})
 		return
 	}
 
-	// Simulate JWT token creation (replace with real JWT logic later)
+	// Dummy JWT token
 	token := "dummy-jwt-token"
 
-	// Build GraphQL-style response
+	// GraphQL-style response
 	response := map[string]interface{}{
 		"data": map[string]interface{}{
 			"signup": map[string]interface{}{
-				"user":  result["data"], // inserted user info
+				"user":  result["data"],
 				"token": token,
 			},
 		},
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	c.JSON(http.StatusOK, response)
 }
