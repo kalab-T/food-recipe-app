@@ -58,8 +58,6 @@ func SignupHandler(c *gin.Context) {
 		mutation($name: String!, $email: String!, $password: String!) {
 			insert_users_one(object: {name: $name, email: $email, password: $password}) {
 				id
-				name
-				email
 			}
 		}
 	`
@@ -102,9 +100,7 @@ func SignupHandler(c *gin.Context) {
 	var result struct {
 		Data struct {
 			InsertUser struct {
-				ID    string `json:"id"`
-				Name  string `json:"name"`
-				Email string `json:"email"`
+				ID string `json:"id"`
 			} `json:"insert_users_one"`
 		} `json:"data"`
 		Errors []struct {
@@ -138,13 +134,9 @@ func SignupHandler(c *gin.Context) {
 		return
 	}
 
-	// 8. Success — matches Hasura Action return type
+	// 8. Success — match Hasura SignupResponse type
 	c.JSON(http.StatusCreated, gin.H{
-		"token": token,
-		"user": map[string]interface{}{
-			"id":    result.Data.InsertUser.ID,
-			"name":  result.Data.InsertUser.Name,
-			"email": result.Data.InsertUser.Email,
-		},
+		"token":   token,
+		"user_id": result.Data.InsertUser.ID,
 	})
 }
