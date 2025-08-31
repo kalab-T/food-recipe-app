@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
@@ -75,8 +76,8 @@ func SignupHandler(c *gin.Context) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("x-hasura-admin-secret", hasuraAdminSecret)
 
-	// 5. Execute request
-	client := &http.Client{}
+	// Set a timeout
+	client := &http.Client{Timeout: 15 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		log.Printf("❌ Hasura connection failed: %v", err)
@@ -85,7 +86,7 @@ func SignupHandler(c *gin.Context) {
 	}
 	defer resp.Body.Close()
 
-	// 6. Handle response
+	// 5. Handle response
 	bodyBytes, _ := io.ReadAll(resp.Body)
 	log.Printf("🔍 Hasura signup response: %s", string(bodyBytes))
 
@@ -120,13 +121,11 @@ func SignupHandler(c *gin.Context) {
 		if strings.Contains(strings.ToLower(errorMsg), "duplicate") || strings.Contains(strings.ToLower(errorMsg), "already exists") {
 			errorMsg = "Email already registered"
 		}
-		c.JSON(http.StatusConflict, gin.H{
-			"message": errorMsg,
-		})
+		c.JSON(http.StatusConflict, gin.H{"message": errorMsg})
 		return
 	}
 
-	// 7. Generate JWT
+	// 6. Generate JWT
 	token, err := auth.GenerateJWT(result.Data.InsertUser.ID)
 	if err != nil {
 		log.Printf("❌ Failed to generate token: %v", err)
@@ -134,7 +133,7 @@ func SignupHandler(c *gin.Context) {
 		return
 	}
 
-	// 8. Success — match Hasura SignupResponse type
+	// 7. Return response matching Hasura SignupResponse
 	c.JSON(http.StatusCreated, gin.H{
 		"token":   token,
 		"user_id": result.Data.InsertUser.ID,
