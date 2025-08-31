@@ -1,26 +1,36 @@
-export default defineEventHandler(async (event) => {
-  // Read frontend form data
-  const body = await readBody(event)
+import { useAuth } from './useAuth'
+import { useNuxtApp } from '#app'
 
-  // Get backend URL from runtime config
-  const config = useRuntimeConfig()
-  const backendUrl = config.public.backendUrl
+export const useSignup = () => {
+  const { setToken, setUser } = useAuth()
+  const { $config } = useNuxtApp()
 
-  try {
-    // Wrap the body inside `input` as expected by Go handler
-    const res = await $fetch(`${backendUrl}/signup`, {
-      method: "POST",
-      body: {
-        input: body, // <-- important: wrap frontend form data inside "input"
-      },
-    })
+  const signup = async (name: string, email: string, password: string) => {
+    try {
+      const res = await $fetch(`${$config.public.backendUrl}/signup`, {
+        method: 'POST',
+        body: {
+          input: { name, email, password } // Go backend expects this
+        }
+      })
 
-    return res
-  } catch (error: any) {
-    console.error("Signup API error:", error)
-    throw createError({
-      statusCode: 500,
-      statusMessage: "Signup failed",
-    })
+      // backend returns { user_id, name, email, token }
+      if (res?.token) {
+        setToken(res.token)
+        setUser({
+          id: res.user_id,
+          name: name,   // store locally from input
+          email: email, // store locally from input
+        })
+        return { success: true }
+      }
+
+      return { success: false, error: 'Signup failed. Invalid response.' }
+    } catch (err: any) {
+      console.error('Signup error:', err)
+      return { success: false, error: err.message || 'Server error' }
+    }
   }
-})
+
+  return { signup }
+}
