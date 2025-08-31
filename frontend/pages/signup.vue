@@ -6,7 +6,8 @@
       v-slot="{ handleSubmit }"
       class="bg-white p-8 rounded shadow-md w-full max-w-md"
     >
-      <form @submit.prevent="submitHandler(handleSubmit)">
+      <!-- Directly bind the submitHandler -->
+      <form @submit.prevent="handleSubmit(onSubmit)">
         <h2 class="text-2xl font-bold mb-6 text-center">Sign Up</h2>
 
         <div class="mb-4">
@@ -56,7 +57,6 @@ import { useSignup } from '~/composables/useSignup'
 
 const router = useRouter()
 const { signup } = useSignup()
-
 const isSubmitting = ref(false)
 const signupError = ref<string | null>(null)
 const schema = ref<yup.AnyObjectSchema>()
@@ -77,20 +77,19 @@ async function onSubmit(values: { name: string; email: string; password: string;
   isSubmitting.value = true
   signupError.value = null
 
-  const { name, email, password } = values
-  const result = await signup(name, email, password)
+  try {
+    const { name, email, password } = values
+    const result = await signup(name, email, password)
 
-  if (result.success) {
-    router.push('/login')
-  } else {
-    signupError.value = result.error || 'Signup failed'
+    if (result.success) {
+      router.push('/login')
+    } else {
+      signupError.value = result.error || 'Signup failed'
+    }
+  } catch (err: any) {
+    signupError.value = err.message || 'Unexpected error occurred'
+  } finally {
+    isSubmitting.value = false
   }
-
-  isSubmitting.value = false
-}
-
-// Wrapper to call handleSubmit correctly in template
-function submitHandler(handleSubmit: (onSubmit: (values: any) => Promise<void>) => (e?: Event) => Promise<void>) {
-  return handleSubmit(onSubmit)
 }
 </script>
