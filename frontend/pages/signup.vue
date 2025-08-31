@@ -50,29 +50,28 @@
 <script setup lang="ts">
 import { Form, Field, ErrorMessage } from 'vee-validate'
 import * as yup from 'yup'
-import { useRouter } from 'vue-router'
 import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { useSignup } from '~/composables/useSignup'
 
 const router = useRouter()
 const isSubmitting = ref(false)
 const signupError = ref<string | null>(null)
-
 const schema = ref<yup.AnyObjectSchema>()
+
+const { signup } = useSignup()
 
 onMounted(() => {
   schema.value = yup.object({
     name: yup.string().required('Name is required'),
     email: yup.string().email('Invalid email').required('Email is required'),
-    password: yup.string().min(6, 'Password must be at least 6 characters').required('Password is required'),
+    password: yup.string().min(6).required('Password is required'),
     confirmPassword: yup
       .string()
       .oneOf([yup.ref('password')], 'Passwords must match')
       .required('Confirm password is required'),
   })
 })
-
-const { signup } = useSignup()
 
 interface SignupFormValues {
   name: string
@@ -85,25 +84,18 @@ async function onSubmit(values: SignupFormValues) {
   isSubmitting.value = true
   signupError.value = null
 
-  try {
-    const { name, email, password } = values
-    const result = await signup(name, email, password)
+  const { name, email, password } = values
+  const result = await signup(name, email, password)
 
-    if (result.success) {
-      router.push('/login')
-    } else {
-      signupError.value = result.error || 'Signup failed'
-    }
-  } catch (err: any) {
-    signupError.value = err.message || 'Unexpected error occurred'
-  } finally {
-    isSubmitting.value = false
+  if (result.success) {
+    router.push('/login')
+  } else {
+    signupError.value = result.error || 'Signup failed. Please try again.'
   }
+
+  isSubmitting.value = false
 }
 
-/**
- * Wraps the VeeValidate handleSubmit to fix TypeScript error by not calling it directly in template.
- */
 function submitHandler(handleSubmit: (onSubmit: (values: SignupFormValues) => Promise<void>) => (e?: Event) => Promise<void>) {
   return handleSubmit(onSubmit)
 }
