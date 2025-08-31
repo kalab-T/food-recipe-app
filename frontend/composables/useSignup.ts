@@ -6,11 +6,7 @@ const SIGNUP_MUTATION = gql`
   mutation Signup($name: String!, $email: String!, $password: String!) {
     signup(input: { name: $name, email: $email, password: $password }) {
       token
-      user {
-        id
-        name
-        email
-      }
+      user_id
     }
   }
 `
@@ -35,21 +31,20 @@ export const useSignup = () => {
         }
       }
 
-      if (data?.signup?.token && data.signup.user) {
+      if (data?.signup?.token && data.signup.user_id) {
         // Save the token in your auth composable
         setToken(data.signup.token)
 
-        // Set the user based on backend response
+        // Store user locally using input data (backend does not return name/email)
         setUser({
-          id: data.signup.user.id,
-          name: data.signup.user.name,
-          email: data.signup.user.email,
+          id: data.signup.user_id,
+          name,
+          email,
         })
 
         return { success: true }
       }
 
-      // If no token or no user, treat as failure
       return { success: false, error: 'Signup failed. Invalid response.' }
     } catch (error: any) {
       console.error('Apollo signup error:', error)
