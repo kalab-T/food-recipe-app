@@ -6,8 +6,7 @@
       v-slot="{ handleSubmit }"
       class="bg-white p-8 rounded shadow-md w-full max-w-md"
     >
-      <!-- Directly bind the submitHandler -->
-      <form @submit.prevent="handleSubmit(onSubmit)">
+      <form @submit.prevent="submitHandler(handleSubmit)">
         <h2 class="text-2xl font-bold mb-6 text-center">Sign Up</h2>
 
         <div class="mb-4">
@@ -51,14 +50,14 @@
 <script setup lang="ts">
 import { Form, Field, ErrorMessage } from 'vee-validate'
 import * as yup from 'yup'
-import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { ref, onMounted } from 'vue'
 import { useSignup } from '~/composables/useSignup'
 
 const router = useRouter()
-const { signup } = useSignup()
 const isSubmitting = ref(false)
 const signupError = ref<string | null>(null)
+
 const schema = ref<yup.AnyObjectSchema>()
 
 onMounted(() => {
@@ -73,7 +72,16 @@ onMounted(() => {
   })
 })
 
-async function onSubmit(values: { name: string; email: string; password: string; confirmPassword: string }) {
+const { signup } = useSignup()
+
+interface SignupFormValues {
+  name: string
+  email: string
+  password: string
+  confirmPassword: string
+}
+
+async function onSubmit(values: SignupFormValues) {
   isSubmitting.value = true
   signupError.value = null
 
@@ -91,5 +99,12 @@ async function onSubmit(values: { name: string; email: string; password: string;
   } finally {
     isSubmitting.value = false
   }
+}
+
+/**
+ * Wraps the VeeValidate handleSubmit to fix TypeScript error by not calling it directly in template.
+ */
+function submitHandler(handleSubmit: (onSubmit: (values: SignupFormValues) => Promise<void>) => (e?: Event) => Promise<void>) {
+  return handleSubmit(onSubmit)
 }
 </script>
