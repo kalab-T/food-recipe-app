@@ -5,13 +5,11 @@ export const useLogin = () => {
 
   const login = async (email: string, password: string) => {
     try {
-      // Send data inside `input` object
+      // Send flat JSON body
       const res = await fetch('/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          input: { email, password }
-        }),
+        body: JSON.stringify({ email, password }), // ✅ corrected
       })
 
       const data = await res.json()
