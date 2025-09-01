@@ -1,5 +1,5 @@
+// ~/composables/useLogin.ts
 import { useAuth } from './useAuth'
-import { useNuxtApp } from '#app'
 
 interface LoginResult {
   success: boolean
@@ -7,22 +7,14 @@ interface LoginResult {
 }
 
 export const useLogin = () => {
-  const nuxtApp = useNuxtApp()
   const { setToken, setUser } = useAuth()
-
-  // Ensure $fetch exists
-  const fetcher = nuxtApp.$fetch || ((...args: any) => {
-    throw new Error('$fetch not available')
-  })
 
   const login = async (email: string, password: string): Promise<LoginResult> => {
     try {
-      const res = await fetcher('/api/login', {
+      const res = await $fetch('/api/login', {
         method: 'POST',
         body: { input: { email, password } }
       })
-
-      console.log('Login response:', res)
 
       if (!res || typeof res !== 'object' || !('user_id' in res) || !('token' in res)) {
         return { success: false, error: 'Invalid response from server' }
