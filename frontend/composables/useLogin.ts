@@ -7,31 +7,31 @@ interface LoginResult {
 }
 
 export const useLogin = () => {
-  const nuxt = useNuxtApp()
+  const nuxtApp = useNuxtApp()
   const { setToken, setUser } = useAuth()
+
+  // Ensure $fetch exists
+  const fetcher = nuxtApp.$fetch || ((...args: any) => {
+    throw new Error('$fetch not available')
+  })
 
   const login = async (email: string, password: string): Promise<LoginResult> => {
     try {
-      if (!nuxt.$fetch) throw new Error('$fetch not available')
-
-      const res = await nuxt.$fetch('/api/login', {
+      const res = await fetcher('/api/login', {
         method: 'POST',
-        body: { email, password } // send plain email/password
+        body: { input: { email, password } }
       })
+
+      console.log('Login response:', res)
 
       if (!res || typeof res !== 'object' || !('user_id' in res) || !('token' in res)) {
         return { success: false, error: 'Invalid response from server' }
       }
 
-      const { user_id, token, name, email: userEmail } = res as {
-        user_id: string
-        token: string
-        name: string
-        email: string
-      }
+      const { user_id, token, name } = res as { user_id: string; token: string; name: string }
 
       setToken(token)
-      setUser({ id: user_id, name, email: userEmail || email })
+      setUser({ id: user_id, name, email })
 
       return { success: true }
     } catch (error: any) {
