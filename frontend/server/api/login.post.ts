@@ -9,12 +9,12 @@ export default defineEventHandler(async (event) => {
   }
 
   const config = useRuntimeConfig()
-  const backend = config.public.apiBase || 'http://localhost:8080'
+  const backend = config.public.apiBase || 'https://food-recipe-appp.onrender.com' // ✅ Render backend URL
 
   try {
     const res = await $fetch(`${backend}/login`, {
       method: 'POST',
-      body: { email, password }, // ✅ corrected here
+      body: { email, password }, // ✅ flat JSON
     })
     return res
   } catch (err: any) {
