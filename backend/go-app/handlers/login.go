@@ -18,11 +18,11 @@ import (
 
 type LoginRequest struct {
 	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required"`
+	Password string `json:"password" binding:"required,min=8"`
 }
 
 func LoginHandler(c *gin.Context) {
-	// 1. Config validation
+	// 1. Read Hasura env
 	hasuraURL := os.Getenv("HASURA_URL")
 	hasuraAdminSecret := os.Getenv("HASURA_GRAPHQL_ADMIN_SECRET")
 	if hasuraURL == "" || hasuraAdminSecret == "" {
@@ -40,10 +40,9 @@ func LoginHandler(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid input: " + err.Error()})
 		return
 	}
-
 	input := payload.Input
-	input.Email = strings.ToLower(strings.TrimSpace(input.Email))
-	input.Password = strings.TrimSpace(input.Password)
+	email := strings.ToLower(strings.TrimSpace(input.Email))
+	password := strings.TrimSpace(input.Password)
 
 	// 3. Hasura query to get user by email
 	query := `
@@ -58,7 +57,7 @@ func LoginHandler(c *gin.Context) {
 
 	reqBody, _ := json.Marshal(map[string]interface{}{
 		"query":     query,
-		"variables": map[string]interface{}{"email": input.Email},
+		"variables": map[string]interface{}{"email": email},
 	})
 
 	req, _ := http.NewRequest("POST", hasuraURL, bytes.NewBuffer(reqBody))
@@ -77,11 +76,6 @@ func LoginHandler(c *gin.Context) {
 	bodyBytes, _ := io.ReadAll(resp.Body)
 	log.Printf("🔍 Hasura login response: %s", string(bodyBytes))
 
-	if resp.StatusCode != http.StatusOK {
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "Login failed", "detail": string(bodyBytes)})
-		return
-	}
-
 	// 4. Parse response
 	var result struct {
 		Data struct {
@@ -97,7 +91,7 @@ func LoginHandler(c *gin.Context) {
 	}
 
 	if err := json.Unmarshal(bodyBytes, &result); err != nil {
-		log.Printf("❌ Failed to parse response: %v", err)
+		log.Printf("❌ Failed to parse Hasura response: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "Data processing error"})
 		return
 	}
@@ -115,8 +109,8 @@ func LoginHandler(c *gin.Context) {
 
 	user := result.Data.Users[0]
 
-	// 5. Compare password
-	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(input.Password)); err != nil {
+	// 5. Verify password
+	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"message": "Invalid email or password"})
 		return
 	}
@@ -124,7 +118,7 @@ func LoginHandler(c *gin.Context) {
 	// 6. Generate JWT
 	token, err := auth.GenerateJWT(user.ID)
 	if err != nil {
-		log.Printf("❌ Failed to generate token: %v", err)
+		log.Printf("❌ Failed to generate JWT: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "Could not generate token"})
 		return
 	}
