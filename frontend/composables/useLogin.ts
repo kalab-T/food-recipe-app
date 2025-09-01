@@ -1,5 +1,5 @@
-// ~/composables/useLogin.ts
 import { useAuth } from './useAuth'
+import { useNuxtApp } from '#app'
 
 interface LoginResult {
   success: boolean
@@ -7,6 +7,7 @@ interface LoginResult {
 }
 
 export const useLogin = () => {
+  const { $fetch } = useNuxtApp()
   const { setToken, setUser } = useAuth()
 
   const login = async (email: string, password: string): Promise<LoginResult> => {
