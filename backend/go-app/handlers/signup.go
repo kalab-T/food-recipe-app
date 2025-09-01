@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
@@ -23,7 +22,6 @@ type SignupRequest struct {
 }
 
 func SignupHandler(c *gin.Context) {
-	// 1. Config validation using Render env
 	hasuraURL := os.Getenv("HASURA_URL")
 	hasuraAdminSecret := os.Getenv("HASURA_GRAPHQL_ADMIN_SECRET")
 	if hasuraURL == "" || hasuraAdminSecret == "" {
@@ -32,7 +30,6 @@ func SignupHandler(c *gin.Context) {
 		return
 	}
 
-	// 2. Parse and validate input
 	var payload struct {
 		Input SignupRequest `json:"input"`
 	}
@@ -46,7 +43,7 @@ func SignupHandler(c *gin.Context) {
 	input.Email = strings.ToLower(strings.TrimSpace(input.Email))
 	input.Password = strings.TrimSpace(input.Password)
 
-	// 3. Password hashing
+	// Hash the password
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(input.Password), 12)
 	if err != nil {
 		log.Printf("❌ Password hashing failed: %v", err)
@@ -54,7 +51,7 @@ func SignupHandler(c *gin.Context) {
 		return
 	}
 
-	// 4. Hasura mutation
+	// Hasura mutation (using admin secret, no JWT required)
 	mutation := `
 		mutation($name: String!, $email: String!, $password: String!) {
 			insert_users_one(object: {name: $name, email: $email, password: $password}) {
@@ -76,8 +73,7 @@ func SignupHandler(c *gin.Context) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("x-hasura-admin-secret", hasuraAdminSecret)
 
-	// Set a timeout
-	client := &http.Client{Timeout: 15 * time.Second}
+	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
 		log.Printf("❌ Hasura connection failed: %v", err)
@@ -86,7 +82,6 @@ func SignupHandler(c *gin.Context) {
 	}
 	defer resp.Body.Close()
 
-	// 5. Handle response
 	bodyBytes, _ := io.ReadAll(resp.Body)
 	log.Printf("🔍 Hasura signup response: %s", string(bodyBytes))
 
@@ -125,7 +120,7 @@ func SignupHandler(c *gin.Context) {
 		return
 	}
 
-	// 6. Generate JWT
+	// ✅ Generate JWT for the new user
 	token, err := auth.GenerateJWT(result.Data.InsertUser.ID)
 	if err != nil {
 		log.Printf("❌ Failed to generate token: %v", err)
@@ -133,9 +128,9 @@ func SignupHandler(c *gin.Context) {
 		return
 	}
 
-	// 7. ✅ Return response matching Hasura SignupResponse
+	// Return both user_id and token
 	c.JSON(http.StatusOK, gin.H{
-		"token":   token,
 		"user_id": result.Data.InsertUser.ID,
+		"token":   token,
 	})
 }
