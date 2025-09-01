@@ -6,11 +6,6 @@ interface LoginResult {
   error?: string
 }
 
-interface LoginInput {
-  email: string
-  password: string
-}
-
 export const useLogin = () => {
   const { $fetch } = useNuxtApp()
   const { setToken, setUser } = useAuth()
@@ -19,7 +14,7 @@ export const useLogin = () => {
     try {
       const res = await $fetch('/api/login', {
         method: 'POST',
-        body: { input: { email, password } }
+        body: { email, password } // no input wrapper
       })
 
       console.log('Login response:', res)
@@ -28,10 +23,10 @@ export const useLogin = () => {
         return { success: false, error: 'Invalid response from server' }
       }
 
-      const { user_id, token, name } = res as { user_id: string; token: string; name: string }
+      const { user_id, token, name, email: userEmail } = res as { user_id: string; token: string; name: string; email: string }
 
       setToken(token)
-      setUser({ id: user_id, name, email })
+      setUser({ id: user_id, name, email: userEmail })
 
       return { success: true }
     } catch (error: any) {
