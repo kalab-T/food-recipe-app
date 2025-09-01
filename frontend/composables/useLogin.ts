@@ -1,35 +1,26 @@
-import { useAuth } from './useAuth'
+import { ref } from 'vue'
 
-export const useLogin = () => {
-  const { setToken, setUser } = useAuth()
+export function useLogin() {
+  const loading = ref(false)
+  const error = ref<string | null>(null)
+  const user = ref<any>(null)
 
-  const login = async (email: string, password: string) => {
+  const login = async (credentials: { email: string; password: string }) => {
+    loading.value = true
+    error.value = null
     try {
-      const res = await fetch('/api/login', {
+      const res = await $fetch('/api/login', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }), // flat JSON
+        body: credentials,
       })
-
-      const data = await res.json()
-
-      if (!res.ok) {
-        return { success: false, error: data.statusMessage || 'Login failed' }
-      }
-
-      if (data.token) setToken(data.token)
-
-      setUser({
-        id: data.user_id,
-        name: data.name,
-        email: data.email,
-      })
-
-      return { success: true }
+      user.value = res
     } catch (err: any) {
-      return { success: false, error: err.message || 'Login failed' }
+      error.value = err?.data?.message || 'Login failed'
+      user.value = null
+    } finally {
+      loading.value = false
     }
   }
 
-  return { login }
+  return { login, loading, error, user }
 }
