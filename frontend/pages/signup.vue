@@ -6,7 +6,6 @@
       v-slot="{ handleSubmit }"
       class="bg-white p-8 rounded shadow-md w-full max-w-md"
     >
-      <!-- Use regular @submit.prevent with submitHandler wrapper -->
       <form @submit.prevent="submitHandler(handleSubmit)">
         <h2 class="text-2xl font-bold mb-6 text-center">Sign Up</h2>
 
@@ -51,8 +50,8 @@
 <script setup lang="ts">
 import { Form, Field, ErrorMessage } from 'vee-validate'
 import * as yup from 'yup'
-import { useRouter } from 'vue-router'
 import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { useSignup } from '~/composables/useSignup'
 
 const router = useRouter()
@@ -60,19 +59,17 @@ const isSubmitting = ref(false)
 const signupError = ref<string | null>(null)
 const schema = ref<yup.AnyObjectSchema>()
 
-const { signup } = useSignup()
-
 onMounted(() => {
   schema.value = yup.object({
     name: yup.string().required('Name is required'),
     email: yup.string().email('Invalid email').required('Email is required'),
     password: yup.string().min(6, 'Password must be at least 6 characters').required('Password is required'),
-    confirmPassword: yup
-      .string()
-      .oneOf([yup.ref('password')], 'Passwords must match')
-      .required('Confirm password is required'),
+    confirmPassword: yup.string().oneOf([yup.ref('password')], 'Passwords must match').required('Confirm password is required'),
   })
 })
+
+// ✅ Get the signup function from composable
+const { signup } = useSignup()
 
 interface SignupFormValues {
   name: string
@@ -81,34 +78,26 @@ interface SignupFormValues {
   confirmPassword: string
 }
 
+// Wrapper for VeeValidate handleSubmit
 async function onSubmit(values: SignupFormValues) {
   isSubmitting.value = true
   signupError.value = null
-  console.log('Form values:', values)
 
   try {
-    const { name, email, password } = values
-    const result = await signup(name, email, password)
-
+    const result = await signup(values.name, values.email, values.password)
     if (result.success) {
-      router.push('/login') // redirect after signup
+      router.push('/login') // redirect after successful signup
     } else {
-      signupError.value = result.error || 'Signup failed. Please try again.'
+      signupError.value = result.error || 'Signup failed'
     }
   } catch (err: any) {
-    console.error('Unexpected error in signup:', err)
-    signupError.value = err.message || 'Unexpected error occurred.'
+    signupError.value = err?.message || 'Unexpected error'
   } finally {
     isSubmitting.value = false
   }
 }
 
-/**
- * Wraps the VeeValidate handleSubmit to fix TypeScript error by not calling it directly in template.
- */
-function submitHandler(
-  handleSubmit: (onSubmit: (values: SignupFormValues) => Promise<void>) => (e?: Event) => Promise<void>
-) {
+function submitHandler(handleSubmit: (onSubmit: (values: SignupFormValues) => Promise<void>) => (e?: Event) => Promise<void>) {
   return handleSubmit(onSubmit)
 }
 </script>
