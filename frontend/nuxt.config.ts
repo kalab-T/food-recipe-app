@@ -5,50 +5,33 @@ export default defineNuxtConfig({
 
   runtimeConfig: {
     public: {
-      // ✅ Hasura GraphQL endpoint (still used for recipes, etc.)
       hasuraUrl:
         process.env.NUXT_PUBLIC_HASURA_URL ||
         'https://hasura-backend-l2yi.onrender.com/v1/graphql',
-
       hasuraWsUrl:
         process.env.NUXT_PUBLIC_HASURA_WS_URL ||
         'wss://hasura-backend-l2yi.onrender.com/v1/graphql',
-
-      hasuraAdminSecret:
-        process.env.NUXT_PUBLIC_HASURA_ADMIN_SECRET || 'adminsecret',
-
-      // ✅ Go backend API (for signup/login)
       backendUrl:
         process.env.NUXT_PUBLIC_BACKEND_URL ||
         'https://food-recipe-appp.onrender.com',
     },
+    hasuraAdminSecret: process.env.HASURA_ADMIN_SECRET, // server-side only
   },
 
   css: ['~/assets/css/tailwind.css'],
 
   postcss: {
-    plugins: {
-      tailwindcss: {},
-      autoprefixer: {},
-    },
+    plugins: { tailwindcss: {}, autoprefixer: {} },
   },
 
-  build: {
-    transpile: ['@apollo/client', 'ts-invariant'],
-  },
+  build: { transpile: ['@apollo/client', 'ts-invariant'] },
 
-  // Tailwind config for dark mode class strategy
-  tailwindcss: {
-    config: {
-      darkMode: 'class',
-    },
-  },
+  tailwindcss: { config: { darkMode: 'class' } },
 
   app: {
     head: {
       script: [
         {
-          // This script ensures the correct theme class on initial page load
           children: `
             (function() {
               try {
@@ -57,11 +40,7 @@ export default defineNuxtConfig({
                   theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
                   localStorage.setItem('theme', theme);
                 }
-                if (theme === 'dark') {
-                  document.documentElement.classList.add('dark');
-                } else {
-                  document.documentElement.classList.remove('dark');
-                }
+                document.documentElement.classList.toggle('dark', theme === 'dark');
               } catch (_) {}
             })();
           `,
