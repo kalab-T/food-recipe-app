@@ -45,16 +45,22 @@ const submitForm = async () => {
   loading.value = true
   errorMessage.value = ''
 
-  const result = await login(email.value, password.value)
+  try {
+    const result = await login(email.value, password.value)
 
-  loading.value = false
+    if (!result.success) {
+      errorMessage.value = result.error || 'Invalid credentials. Please try again.'
+      loading.value = false
+      return
+    }
 
-  if (!result.success) {
-    // error is already a string in useLogin.ts
-    errorMessage.value = result.error || 'Invalid credentials. Please try again.'
-    return
+    // Redirect to home after successful login
+    router.push('/')
+  } catch (err: any) {
+    console.error('Unexpected login error:', err)
+    errorMessage.value = err?.message || 'Login failed due to unexpected error.'
+  } finally {
+    loading.value = false
   }
-
-  router.push('/')
 }
 </script>
