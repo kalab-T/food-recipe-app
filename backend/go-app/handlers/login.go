@@ -6,10 +6,10 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 
 	"go-app/auth"
-	"go-app/config"
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
@@ -17,26 +17,28 @@ import (
 
 // LoginHandler handles Hasura login action
 func LoginHandler(c *gin.Context) {
-	if config.HasuraURL() == "" || config.HasuraAdminSecret() == "" {
+	hasuraURL := os.Getenv("HASURA_URL")
+	hasuraAdminSecret := os.Getenv("HASURA_GRAPHQL_ADMIN_SECRET")
+
+	if hasuraURL == "" || hasuraAdminSecret == "" {
 		log.Printf("❌ Missing Hasura configuration")
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "Server configuration error"})
 		return
 	}
 
-	// ✅ Use wrapper like signup
-	var wrapper struct {
+	var payload struct {
 		Input struct {
 			Email    string `json:"email" binding:"required,email"`
 			Password string `json:"password" binding:"required"`
 		} `json:"input"`
 	}
 
-	if err := c.ShouldBindJSON(&wrapper); err != nil {
+	if err := c.ShouldBindJSON(&payload); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid input: " + err.Error()})
 		return
 	}
 
-	input := wrapper.Input // unwrap
+	input := payload.Input
 	input.Email = strings.ToLower(strings.TrimSpace(input.Email))
 	input.Password = strings.TrimSpace(input.Password)
 
@@ -57,9 +59,9 @@ func LoginHandler(c *gin.Context) {
 		"variables": map[string]interface{}{"email": input.Email},
 	})
 
-	req, _ := http.NewRequest("POST", config.HasuraURL(), bytes.NewBuffer(reqBody))
+	req, _ := http.NewRequest("POST", hasuraURL, bytes.NewBuffer(reqBody))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-hasura-admin-secret", config.HasuraAdminSecret())
+	req.Header.Set("x-hasura-admin-secret", hasuraAdminSecret)
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
@@ -111,12 +113,7 @@ func LoginHandler(c *gin.Context) {
 
 	user := result.Data.Users[0]
 
-	if user.Password == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"message": "Invalid email or password"})
-		return
-	}
-
-	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(input.Password)); err != nil {
+	if user.Password == "" || bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(input.Password)) != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"message": "Invalid email or password"})
 		return
 	}
