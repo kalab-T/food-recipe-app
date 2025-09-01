@@ -14,7 +14,7 @@ export default defineEventHandler(async (event) => {
   try {
     const res = await $fetch(`${backend}/login`, {
       method: 'POST',
-      body: { input: { email, password } },
+      body: { email, password }, // ✅ corrected here
     })
     return res
   } catch (err: any) {
