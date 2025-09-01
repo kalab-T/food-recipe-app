@@ -20,27 +20,35 @@ export const useSignup = () => {
     try {
       const res = await $fetch('/api/signup', {
         method: 'POST',
-        body: { input: { name, email, password } } // forward as { input: ... }
+        body: { input: { name, email, password } },
       })
 
       console.log('Signup response:', res)
 
-      // Check if response has user_id and token
       if (!res || typeof res !== 'object' || !('user_id' in res) || !('token' in res)) {
         return { success: false, error: 'Invalid response from server' }
       }
 
       const { user_id, token } = res as { user_id: string; token: string }
 
-      // Save the token in auth composable
+      // Save token and user info locally
       setToken(token)
-
-      // Save user locally using input values (backend no longer returns name/email)
       setUser({
         id: user_id,
         name,
-        email
+        email,
       })
+
+      // Also store in localStorage so the frontend can persist it
+      localStorage.setItem('token', token)
+      localStorage.setItem(
+        'user',
+        JSON.stringify({
+          id: user_id,
+          name,
+          email,
+        })
+      )
 
       return { success: true }
     } catch (error: any) {
