@@ -14,7 +14,7 @@ export const useLogin = () => {
     try {
       const res = await $fetch('/api/login', {
         method: 'POST',
-        body: { email, password } // no input wrapper
+        body: { email, password } // plain object
       })
 
       console.log('Login response:', res)
@@ -23,7 +23,12 @@ export const useLogin = () => {
         return { success: false, error: 'Invalid response from server' }
       }
 
-      const { user_id, token, name, email: userEmail } = res as { user_id: string; token: string; name: string; email: string }
+      const { user_id, token, name, email: userEmail } = res as {
+        user_id: string
+        token: string
+        name: string
+        email: string
+      }
 
       setToken(token)
       setUser({ id: user_id, name, email: userEmail })
