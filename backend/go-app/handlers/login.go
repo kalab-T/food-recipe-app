@@ -10,14 +10,19 @@ import (
 	"strings"
 	"time"
 
-	"go-app/auth"
-
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
+
+	"go-app/auth"
 )
 
+type LoginRequest struct {
+	Email    string `json:"email" binding:"required,email"`
+	Password string `json:"password" binding:"required"`
+}
+
 func LoginHandler(c *gin.Context) {
-	// 1. Read env from Vercel/Render
+	// 1. Read Hasura env like signup
 	hasuraURL := os.Getenv("HASURA_URL")
 	hasuraAdminSecret := os.Getenv("HASURA_GRAPHQL_ADMIN_SECRET")
 	if hasuraURL == "" || hasuraAdminSecret == "" {
@@ -27,18 +32,19 @@ func LoginHandler(c *gin.Context) {
 	}
 
 	// 2. Parse input
-	var input struct {
-		Email    string `json:"email" binding:"required,email"`
-		Password string `json:"password" binding:"required"`
+	var payload struct {
+		Input LoginRequest `json:"input"`
 	}
-	if err := c.ShouldBindJSON(&input); err != nil {
+	if err := c.ShouldBindJSON(&payload); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid input: " + err.Error()})
 		return
 	}
+
+	input := payload.Input
 	input.Email = strings.ToLower(strings.TrimSpace(input.Email))
 	input.Password = strings.TrimSpace(input.Password)
 
-	// 3. Query Hasura
+	// 3. Query user from Hasura
 	query := `
 	query($email: String!) {
 		users(where: {email: {_eq: $email}}) {
@@ -68,10 +74,8 @@ func LoginHandler(c *gin.Context) {
 	defer resp.Body.Close()
 
 	bodyBytes, _ := io.ReadAll(resp.Body)
-
-	if resp.StatusCode != 200 {
-		log.Printf("❌ Hasura returned status: %d, body: %s", resp.StatusCode, string(bodyBytes))
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "Database service error"})
+	if resp.StatusCode != http.StatusOK {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Database service error", "detail": string(bodyBytes)})
 		return
 	}
 
@@ -90,30 +94,31 @@ func LoginHandler(c *gin.Context) {
 	}
 
 	if err := json.Unmarshal(bodyBytes, &result); err != nil {
-		log.Printf("❌ Parse error: %v, body: %s", err, string(bodyBytes))
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "Data processing error"})
 		return
 	}
 
-	if len(result.Data.Users) == 0 || len(result.Errors) > 0 {
+	if len(result.Errors) > 0 || len(result.Data.Users) == 0 {
 		c.JSON(http.StatusUnauthorized, gin.H{"message": "Invalid email or password"})
 		return
 	}
 
 	user := result.Data.Users[0]
 
-	if user.Password == "" || bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(input.Password)) != nil {
+	// 4. Compare password
+	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(input.Password)); err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"message": "Invalid email or password"})
 		return
 	}
 
+	// 5. Generate JWT
 	token, err := auth.GenerateJWT(user.ID)
 	if err != nil {
-		log.Printf("❌ Token generation failed: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "Could not generate token"})
 		return
 	}
 
+	// 6. Return response
 	c.JSON(http.StatusOK, gin.H{
 		"user_id": user.ID,
 		"name":    user.Name,
