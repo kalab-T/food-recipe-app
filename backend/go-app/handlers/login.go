@@ -1,115 +1,64 @@
 package handlers
 
 import (
-	"bytes"
 	"encoding/json"
-	"fmt"
-	"io/ioutil"
 	"net/http"
-	"os"
 	"time"
 
+	"backend/auth"
+	"backend/models"
+
+	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v4"
 	"golang.org/x/crypto/bcrypt"
 )
 
-var jwtSecret = []byte(os.Getenv("JWT_SECRET"))
+var jwtKey = []byte("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
 
-// LoginRequest represents login input
-type LoginRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
-}
-
-// LoginResponse represents login output
-type LoginResponse struct {
-	Token string `json:"token"`
-}
-
-// HasuraQueryResponse represents the GraphQL response from Hasura
-type HasuraQueryResponse struct {
-	Data struct {
-		Users []struct {
-			ID       string `json:"id"`
-			Email    string `json:"email"`
-			Password string `json:"password"`
-		} `json:"users"`
-	} `json:"data"`
-}
-
-// LoginHandler handles login
-func LoginHandler(w http.ResponseWriter, r *http.Request) {
-	var req LoginRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid input", http.StatusBadRequest)
+// LoginHandler handles user login using Gin
+func LoginHandler(c *gin.Context) {
+	var creds models.Credentials
+	if err := c.ShouldBindJSON(&creds); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
 		return
 	}
 
-	// Query Hasura for the user
-	query := fmt.Sprintf(`{
-		users(where: {email: {_eq: "%s"}}) {
-			id
-			email
-			password
-		}
-	}`, req.Email)
-
-	hasuraReq := map[string]string{"query": query}
-	reqBody, _ := json.Marshal(hasuraReq)
-
-	hasuraURL := os.Getenv("HASURA_GRAPHQL_ENDPOINT")
-	reqGraph, _ := http.NewRequest("POST", hasuraURL, bytes.NewBuffer(reqBody))
-	reqGraph.Header.Set("Content-Type", "application/json")
-	reqGraph.Header.Set("x-hasura-admin-secret", os.Getenv("HASURA_ADMIN_SECRET"))
-
-	client := &http.Client{}
-	resp, err := client.Do(reqGraph)
+	// Fetch user from DB using Hasura
+	user, err := auth.GetUserByEmail(creds.Email)
 	if err != nil {
-		http.Error(w, "Failed to query Hasura", http.StatusInternalServerError)
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email or password"})
 		return
 	}
-	defer resp.Body.Close()
-
-	body, _ := ioutil.ReadAll(resp.Body)
-
-	var hasuraResp HasuraQueryResponse
-	if err := json.Unmarshal(body, &hasuraResp); err != nil {
-		http.Error(w, "Failed to parse Hasura response", http.StatusInternalServerError)
-		return
-	}
-
-	if len(hasuraResp.Data.Users) == 0 {
-		http.Error(w, "Invalid email or password", http.StatusUnauthorized)
-		return
-	}
-
-	user := hasuraResp.Data.Users[0]
 
 	// Compare hashed password
-	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password)); err != nil {
-		http.Error(w, "Invalid email or password", http.StatusUnauthorized)
+	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(creds.Password)); err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email or password"})
 		return
 	}
 
-	// Generate JWT token
-	claims := jwt.MapClaims{
-		"sub":   user.ID,
-		"email": user.Email,
-		"exp":   time.Now().Add(time.Hour * 72).Unix(),
-		"iat":   time.Now().Unix(),
-		"https://hasura.io/jwt/claims": map[string]interface{}{
-			"x-hasura-allowed-roles": []string{"user"},
-			"x-hasura-default-role":  "user",
-			"x-hasura-user-id":       user.ID,
+	// Create JWT token
+	expirationTime := time.Now().Add(24 * time.Hour)
+	claims := &models.Claims{
+		UserID: user.ID,
+		Email:  user.Email,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(expirationTime),
 		},
 	}
-
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	tokenString, err := token.SignedString(jwtSecret)
+	tokenString, err := token.SignedString(jwtKey)
 	if err != nil {
-		http.Error(w, "Failed to generate token", http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not generate token"})
 		return
 	}
 
-	json.NewEncoder(w).Encode(LoginResponse{Token: tokenString})
+	// Success
+	c.JSON(http.StatusOK, gin.H{
+		"token": tokenString,
+		"user": gin.H{
+			"id":    user.ID,
+			"email": user.Email,
+			"name":  user.Name,
+		},
+	})
 }
