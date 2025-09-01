@@ -133,8 +133,8 @@ func SignupHandler(c *gin.Context) {
 		return
 	}
 
-	// 7. Return response matching Hasura SignupResponse
-	c.JSON(http.StatusCreated, gin.H{
+	// 7. ✅ Return response matching Hasura SignupResponse
+	c.JSON(http.StatusOK, gin.H{
 		"token":   token,
 		"user_id": result.Data.InsertUser.ID,
 	})
