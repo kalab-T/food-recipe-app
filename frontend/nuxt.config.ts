@@ -4,18 +4,12 @@ export default defineNuxtConfig({
   modules: ['@nuxtjs/color-mode'],
 
   runtimeConfig: {
-    public: {
-      hasuraUrl:
-        process.env.NUXT_PUBLIC_HASURA_URL ||
-        'https://hasura-backend-l2yi.onrender.com/v1/graphql',
-      hasuraWsUrl:
-        process.env.NUXT_PUBLIC_HASURA_WS_URL ||
-        'wss://hasura-backend-l2yi.onrender.com/v1/graphql',
-      backendUrl:
-        process.env.NUXT_PUBLIC_BACKEND_URL ||
-        'https://food-recipe-appp.onrender.com',
-    },
+    backendUrl: process.env.NUXT_PUBLIC_BACKEND_URL, // server-side only
     hasuraAdminSecret: process.env.HASURA_ADMIN_SECRET, // server-side only
+    public: {
+      hasuraUrl: process.env.NUXT_PUBLIC_HASURA_URL,
+      hasuraWsUrl: process.env.NUXT_PUBLIC_HASURA_WS_URL,
+    },
   },
 
   css: ['~/assets/css/tailwind.css'],
