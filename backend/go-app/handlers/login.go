@@ -22,7 +22,7 @@ type LoginRequest struct {
 }
 
 func LoginHandler(c *gin.Context) {
-	// Read Hasura config from env
+	// 1. Config validation
 	hasuraURL := os.Getenv("HASURA_URL")
 	hasuraAdminSecret := os.Getenv("HASURA_GRAPHQL_ADMIN_SECRET")
 	if hasuraURL == "" || hasuraAdminSecret == "" {
@@ -31,7 +31,7 @@ func LoginHandler(c *gin.Context) {
 		return
 	}
 
-	// Parse input
+	// 2. Parse input
 	var payload struct {
 		Input LoginRequest `json:"input"`
 	}
@@ -45,15 +45,16 @@ func LoginHandler(c *gin.Context) {
 	input.Email = strings.ToLower(strings.TrimSpace(input.Email))
 	input.Password = strings.TrimSpace(input.Password)
 
-	// 1. Query user from Hasura
+	// 3. Hasura query to get user by email
 	query := `
-	query($email: String!) {
-		users(where: {email: {_eq: $email}}) {
-			id
-			name
-			password
+		query($email: String!) {
+			users(where: {email: {_eq: $email}}) {
+				id
+				name
+				password
+			}
 		}
-	}`
+	`
 
 	reqBody, _ := json.Marshal(map[string]interface{}{
 		"query":     query,
@@ -81,7 +82,7 @@ func LoginHandler(c *gin.Context) {
 		return
 	}
 
-	// Parse user
+	// 4. Parse response
 	var result struct {
 		Data struct {
 			Users []struct {
@@ -94,26 +95,33 @@ func LoginHandler(c *gin.Context) {
 			Message string `json:"message"`
 		} `json:"errors"`
 	}
+
 	if err := json.Unmarshal(bodyBytes, &result); err != nil {
 		log.Printf("❌ Failed to parse response: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "Data processing error"})
 		return
 	}
 
-	if len(result.Users) == 0 {
+	if len(result.Errors) > 0 {
+		log.Printf("❌ Hasura errors: %+v", result.Errors)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": result.Errors[0].Message})
+		return
+	}
+
+	if len(result.Data.Users) == 0 {
 		c.JSON(http.StatusUnauthorized, gin.H{"message": "Invalid email or password"})
 		return
 	}
 
-	user := result.Users[0]
+	user := result.Data.Users[0]
 
-	// Check password
+	// 5. Compare password
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(input.Password)); err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"message": "Invalid email or password"})
 		return
 	}
 
-	// Generate JWT
+	// 6. Generate JWT
 	token, err := auth.GenerateJWT(user.ID)
 	if err != nil {
 		log.Printf("❌ Failed to generate token: %v", err)
@@ -121,6 +129,7 @@ func LoginHandler(c *gin.Context) {
 		return
 	}
 
+	// 7. Return response
 	c.JSON(http.StatusOK, gin.H{
 		"token":   token,
 		"user_id": user.ID,
