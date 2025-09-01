@@ -1,26 +1,44 @@
-import { ref } from 'vue'
+import { useAuth } from './useAuth'
+import { useNuxtApp } from '#app'
 
-export function useLogin() {
-  const loading = ref(false)
-  const error = ref<string | null>(null)
-  const user = ref<any>(null)
+interface LoginResult {
+  success: boolean
+  error?: string
+}
 
-  const login = async (credentials: { email: string; password: string }) => {
-    loading.value = true
-    error.value = null
+interface LoginInput {
+  email: string
+  password: string
+}
+
+export const useLogin = () => {
+  const { $fetch } = useNuxtApp()
+  const { setToken, setUser } = useAuth()
+
+  const login = async (email: string, password: string): Promise<LoginResult> => {
     try {
       const res = await $fetch('/api/login', {
         method: 'POST',
-        body: credentials,
+        body: { input: { email, password } }
       })
-      user.value = res
-    } catch (err: any) {
-      error.value = err?.data?.message || 'Login failed'
-      user.value = null
-    } finally {
-      loading.value = false
+
+      console.log('Login response:', res)
+
+      if (!res || typeof res !== 'object' || !('user_id' in res) || !('token' in res)) {
+        return { success: false, error: 'Invalid response from server' }
+      }
+
+      const { user_id, token, name } = res as { user_id: string; token: string; name: string }
+
+      setToken(token)
+      setUser({ id: user_id, name, email })
+
+      return { success: true }
+    } catch (error: any) {
+      console.error('Login API error:', error)
+      return { success: false, error: error?.message || 'Login failed' }
     }
   }
 
-  return { login, loading, error, user }
+  return { login }
 }
