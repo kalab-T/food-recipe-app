@@ -8,32 +8,35 @@ import (
 	"net/http"
 	"os"
 	"strings"
-
-	"go-app/auth"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
+
+	"go-app/auth"
 )
 
-// LoginHandler handles Hasura login action
+type LoginRequest struct {
+	Email    string `json:"email" binding:"required,email"`
+	Password string `json:"password" binding:"required"`
+}
+
 func LoginHandler(c *gin.Context) {
+	// 1. Read Hasura env directly
 	hasuraURL := os.Getenv("HASURA_URL")
 	hasuraAdminSecret := os.Getenv("HASURA_GRAPHQL_ADMIN_SECRET")
-
 	if hasuraURL == "" || hasuraAdminSecret == "" {
-		log.Printf("❌ Missing Hasura configuration")
+		log.Println("❌ Hasura config missing")
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "Server configuration error"})
 		return
 	}
 
+	// 2. Parse input wrapped as { input: ... }
 	var payload struct {
-		Input struct {
-			Email    string `json:"email" binding:"required,email"`
-			Password string `json:"password" binding:"required"`
-		} `json:"input"`
+		Input LoginRequest `json:"input"`
 	}
-
 	if err := c.ShouldBindJSON(&payload); err != nil {
+		log.Printf("❌ Invalid login request: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid input: " + err.Error()})
 		return
 	}
@@ -42,8 +45,7 @@ func LoginHandler(c *gin.Context) {
 	input.Email = strings.ToLower(strings.TrimSpace(input.Email))
 	input.Password = strings.TrimSpace(input.Password)
 
-	log.Printf("🔍 Login attempt for: %s", input.Email)
-
+	// 3. GraphQL query for user by email
 	query := `
 	query($email: String!) {
 		users(where: {email: {_eq: $email}}) {
@@ -53,7 +55,6 @@ func LoginHandler(c *gin.Context) {
 			password
 		}
 	}`
-
 	reqBody, _ := json.Marshal(map[string]interface{}{
 		"query":     query,
 		"variables": map[string]interface{}{"email": input.Email},
@@ -63,20 +64,21 @@ func LoginHandler(c *gin.Context) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("x-hasura-admin-secret", hasuraAdminSecret)
 
-	client := &http.Client{}
+	client := &http.Client{Timeout: 15 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Printf("❌ Hasura request failed: %v", err)
+		log.Printf("❌ Hasura connection failed: %v", err)
 		c.JSON(http.StatusServiceUnavailable, gin.H{"message": "Service unavailable"})
 		return
 	}
 	defer resp.Body.Close()
 
 	bodyBytes, _ := io.ReadAll(resp.Body)
-
-	if resp.StatusCode != 200 {
-		log.Printf("❌ Hasura returned status: %d, body: %s", resp.StatusCode, string(bodyBytes))
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "Database service error"})
+	if resp.StatusCode != http.StatusOK {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"message": "Login failed",
+			"detail":  string(bodyBytes),
+		})
 		return
 	}
 
@@ -95,18 +97,12 @@ func LoginHandler(c *gin.Context) {
 	}
 
 	if err := json.Unmarshal(bodyBytes, &result); err != nil {
-		log.Printf("❌ Parse error: %v, body: %s", err, string(bodyBytes))
+		log.Printf("❌ Failed to parse response: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "Data processing error"})
 		return
 	}
 
-	if len(result.Errors) > 0 {
-		log.Printf("❌ GraphQL error: %v", result.Errors[0].Message)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "Database query error"})
-		return
-	}
-
-	if len(result.Data.Users) == 0 {
+	if len(result.Errors) > 0 || len(result.Data.Users) == 0 {
 		c.JSON(http.StatusUnauthorized, gin.H{"message": "Invalid email or password"})
 		return
 	}
@@ -118,6 +114,7 @@ func LoginHandler(c *gin.Context) {
 		return
 	}
 
+	// 4. Generate JWT
 	token, err := auth.GenerateJWT(user.ID)
 	if err != nil {
 		log.Printf("❌ Token generation failed: %v", err)
