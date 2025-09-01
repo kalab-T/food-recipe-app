@@ -1,18 +1,19 @@
 export default defineEventHandler(async (event) => {
   const body = await readBody(event)
+  const config = useRuntimeConfig()
+  const backendUrl = config.public.backendUrl
 
   try {
-    const res = await $fetch('/api/login', {
+    const res = await $fetch(`${backendUrl}/login`, {
       method: 'POST',
-      body: { input: body } // wrap input like signup
+      body, // send raw { email, password }
     })
-
     return res
   } catch (error: any) {
     console.error('Login API error:', error)
     throw createError({
       statusCode: 500,
-      statusMessage: 'Login failed'
+      statusMessage: 'Login failed',
     })
   }
 })
