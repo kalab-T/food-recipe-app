@@ -10,10 +10,9 @@ import (
 	"strings"
 	"time"
 
+	"go-app/auth"
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
-
-	"go-app/auth"
 )
 
 type LoginRequest struct {
@@ -21,17 +20,19 @@ type LoginRequest struct {
 	Password string `json:"password" binding:"required"`
 }
 
+// LoginHandler handles Hasura login action
 func LoginHandler(c *gin.Context) {
-	// 1. Read Hasura env like signup
+	// 1. Read env variables directly
 	hasuraURL := os.Getenv("HASURA_URL")
 	hasuraAdminSecret := os.Getenv("HASURA_GRAPHQL_ADMIN_SECRET")
+
 	if hasuraURL == "" || hasuraAdminSecret == "" {
 		log.Println("❌ Hasura config missing")
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "Server configuration error"})
 		return
 	}
 
-	// 2. Parse input
+	// 2. Parse and validate input
 	var payload struct {
 		Input LoginRequest `json:"input"`
 	}
@@ -44,7 +45,9 @@ func LoginHandler(c *gin.Context) {
 	input.Email = strings.ToLower(strings.TrimSpace(input.Email))
 	input.Password = strings.TrimSpace(input.Password)
 
-	// 3. Query user from Hasura
+	log.Printf("🔍 Login attempt for: %s", input.Email)
+
+	// 3. Query Hasura for user
 	query := `
 	query($email: String!) {
 		users(where: {email: {_eq: $email}}) {
@@ -64,6 +67,7 @@ func LoginHandler(c *gin.Context) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("x-hasura-admin-secret", hasuraAdminSecret)
 
+	// 4. Set a timeout
 	client := &http.Client{Timeout: 15 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -74,8 +78,10 @@ func LoginHandler(c *gin.Context) {
 	defer resp.Body.Close()
 
 	bodyBytes, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != http.StatusOK {
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "Database service error", "detail": string(bodyBytes)})
+
+	if resp.StatusCode != 200 {
+		log.Printf("❌ Hasura returned status: %d, body: %s", resp.StatusCode, string(bodyBytes))
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Database service error"})
 		return
 	}
 
@@ -94,31 +100,44 @@ func LoginHandler(c *gin.Context) {
 	}
 
 	if err := json.Unmarshal(bodyBytes, &result); err != nil {
+		log.Printf("❌ Parse error: %v, body: %s", err, string(bodyBytes))
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "Data processing error"})
 		return
 	}
 
-	if len(result.Errors) > 0 || len(result.Data.Users) == 0 {
+	if len(result.Errors) > 0 {
+		log.Printf("❌ GraphQL error: %v", result.Errors[0].Message)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Database query error"})
+		return
+	}
+
+	if len(result.Data.Users) == 0 {
 		c.JSON(http.StatusUnauthorized, gin.H{"message": "Invalid email or password"})
 		return
 	}
 
 	user := result.Data.Users[0]
 
-	// 4. Compare password
+	if user.Password == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"message": "Invalid email or password"})
+		return
+	}
+
+	// 5. Compare password
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(input.Password)); err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"message": "Invalid email or password"})
 		return
 	}
 
-	// 5. Generate JWT
+	// 6. Generate JWT
 	token, err := auth.GenerateJWT(user.ID)
 	if err != nil {
+		log.Printf("❌ Token generation failed: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "Could not generate token"})
 		return
 	}
 
-	// 6. Return response
+	// 7. Return response matching frontend expectation
 	c.JSON(http.StatusOK, gin.H{
 		"user_id": user.ID,
 		"name":    user.Name,
