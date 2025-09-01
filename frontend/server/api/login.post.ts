@@ -1,4 +1,3 @@
-// ~/server/api/login.post.ts
 export default defineEventHandler(async (event) => {
   const body = await readBody(event)
 
@@ -6,10 +5,9 @@ export default defineEventHandler(async (event) => {
   const backendUrl = config.public.backendUrl
 
   try {
-    // forward input as { input: ... } just like signup
     const res = await $fetch(`${backendUrl}/login`, {
       method: 'POST',
-      body: { input: body.input }
+      body: { input: body } // wrap input for Go backend
     })
 
     return res
