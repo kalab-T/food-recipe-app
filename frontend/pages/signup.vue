@@ -53,14 +53,14 @@ import { Form, Field, ErrorMessage } from 'vee-validate'
 import * as yup from 'yup'
 import { useRouter } from 'vue-router'
 import { ref, onMounted } from 'vue'
-import { gql } from '@apollo/client/core'
-import { useNuxtApp } from '#app'
+import { useSignup } from '~/composables/useSignup'
 
 const router = useRouter()
 const isSubmitting = ref(false)
 const signupError = ref<string | null>(null)
-
 const schema = ref<yup.AnyObjectSchema>()
+
+const { signup } = useSignup()
 
 onMounted(() => {
   schema.value = yup.object({
@@ -73,16 +73,6 @@ onMounted(() => {
       .required('Confirm password is required'),
   })
 })
-
-const apolloClient = useNuxtApp().$publicApollo
-
-const SIGNUP_MUTATION = gql`
-  mutation Signup($name: String!, $email: String!, $password: String!) {
-    signup(name: $name, email: $email, password: $password) {
-      token
-    }
-  }
-`
 
 interface SignupFormValues {
   name: string
@@ -98,27 +88,12 @@ async function onSubmit(values: SignupFormValues) {
 
   try {
     const { name, email, password } = values
+    const result = await signup(name, email, password)
 
-    const { data, errors } = await apolloClient.mutate({
-      mutation: SIGNUP_MUTATION,
-      variables: { name, email, password },
-    })
-
-    console.log('Apollo mutation result:', { data, errors })
-
-    if (errors && errors.length > 0) {
-      console.error('Signup failed (GraphQL errors):', errors)
-      signupError.value = errors.map(e => e.message).join(', ')
-      return
-    }
-
-    if (data?.signup?.token) {
-      console.log('Signup successful:', data.signup.token)
-      localStorage.setItem('token', data.signup.token)
-      router.push('/login')
+    if (result.success) {
+      router.push('/login') // redirect after signup
     } else {
-      console.error('Signup failed: No token returned from server.')
-      signupError.value = 'Signup failed. Please try again.'
+      signupError.value = result.error || 'Signup failed. Please try again.'
     }
   } catch (err: any) {
     console.error('Unexpected error in signup:', err)
@@ -130,9 +105,10 @@ async function onSubmit(values: SignupFormValues) {
 
 /**
  * Wraps the VeeValidate handleSubmit to fix TypeScript error by not calling it directly in template.
- * @param handleSubmit 
  */
-function submitHandler(handleSubmit: (onSubmit: (values: SignupFormValues) => Promise<void>) => (e?: Event) => Promise<void>) {
+function submitHandler(
+  handleSubmit: (onSubmit: (values: SignupFormValues) => Promise<void>) => (e?: Event) => Promise<void>
+) {
   return handleSubmit(onSubmit)
 }
 </script>
