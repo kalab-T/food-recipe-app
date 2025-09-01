@@ -50,12 +50,11 @@ const submitForm = async () => {
   loading.value = false
 
   if (!result.success) {
-    errorMessage.value = result.error?.message || 'Invalid credentials. Please try again.'
+    // error is already a string in useLogin.ts
+    errorMessage.value = result.error || 'Invalid credentials. Please try again.'
     return
   }
 
   router.push('/')
 }
-
-
 </script>
