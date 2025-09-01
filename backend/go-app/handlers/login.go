@@ -1,8 +1,10 @@
 package handlers
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"os"
 	"time"
@@ -13,19 +15,19 @@ import (
 
 var jwtSecret = []byte(os.Getenv("JWT_SECRET"))
 
-// LoginRequest defines the structure for login input
+// LoginRequest represents login input
 type LoginRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
 }
 
-// LoginResponse defines the structure for login response
+// LoginResponse represents login output
 type LoginResponse struct {
 	Token string `json:"token"`
 }
 
-// HasuraUserQueryResponse represents the Hasura GraphQL response
-type HasuraUserQueryResponse struct {
+// HasuraQueryResponse represents the GraphQL response from Hasura
+type HasuraQueryResponse struct {
 	Data struct {
 		Users []struct {
 			ID       string `json:"id"`
@@ -35,48 +37,53 @@ type HasuraUserQueryResponse struct {
 	} `json:"data"`
 }
 
-// LoginHandler verifies user credentials and returns JWT
+// LoginHandler handles login
 func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	var req LoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request", http.StatusBadRequest)
+		http.Error(w, "Invalid input", http.StatusBadRequest)
 		return
 	}
 
-	// Prepare GraphQL query
-	query := `
-	query GetUserByEmail($email: String!) {
-		users(where: {email: {_eq: $email}}) {
+	// Query Hasura for the user
+	query := fmt.Sprintf(`{
+		users(where: {email: {_eq: "%s"}}) {
 			id
 			email
 			password
 		}
-	}`
-	vars := map[string]interface{}{
-		"email": req.Email,
-	}
+	}`, req.Email)
 
-	// Send request to Hasura
-	resp, err := sendHasuraRequest(query, vars)
+	hasuraReq := map[string]string{"query": query}
+	reqBody, _ := json.Marshal(hasuraReq)
+
+	hasuraURL := os.Getenv("HASURA_GRAPHQL_ENDPOINT")
+	reqGraph, _ := http.NewRequest("POST", hasuraURL, bytes.NewBuffer(reqBody))
+	reqGraph.Header.Set("Content-Type", "application/json")
+	reqGraph.Header.Set("x-hasura-admin-secret", os.Getenv("HASURA_ADMIN_SECRET"))
+
+	client := &http.Client{}
+	resp, err := client.Do(reqGraph)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Hasura request failed: %v", err), http.StatusInternalServerError)
+		http.Error(w, "Failed to query Hasura", http.StatusInternalServerError)
 		return
 	}
 	defer resp.Body.Close()
 
-	var result HasuraUserQueryResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		http.Error(w, "Failed to decode response", http.StatusInternalServerError)
+	body, _ := ioutil.ReadAll(resp.Body)
+
+	var hasuraResp HasuraQueryResponse
+	if err := json.Unmarshal(body, &hasuraResp); err != nil {
+		http.Error(w, "Failed to parse Hasura response", http.StatusInternalServerError)
 		return
 	}
 
-	// Check if user exists
-	if len(result.Data.Users) == 0 {
+	if len(hasuraResp.Data.Users) == 0 {
 		http.Error(w, "Invalid email or password", http.StatusUnauthorized)
 		return
 	}
 
-	user := result.Data.Users[0]
+	user := hasuraResp.Data.Users[0]
 
 	// Compare hashed password
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password)); err != nil {
@@ -85,24 +92,24 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Generate JWT token
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"user_id":   user.ID,
-		"email":     user.Email,
-		"exp":       time.Now().Add(time.Hour * 72).Unix(),
-		"hasura_claims": map[string]interface{}{
+	claims := jwt.MapClaims{
+		"sub":   user.ID,
+		"email": user.Email,
+		"exp":   time.Now().Add(time.Hour * 72).Unix(),
+		"iat":   time.Now().Unix(),
+		"https://hasura.io/jwt/claims": map[string]interface{}{
 			"x-hasura-allowed-roles": []string{"user"},
 			"x-hasura-default-role":  "user",
 			"x-hasura-user-id":       user.ID,
 		},
-	})
+	}
 
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	tokenString, err := token.SignedString(jwtSecret)
 	if err != nil {
 		http.Error(w, "Failed to generate token", http.StatusInternalServerError)
 		return
 	}
 
-	// Send back response
-	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(LoginResponse{Token: tokenString})
 }
