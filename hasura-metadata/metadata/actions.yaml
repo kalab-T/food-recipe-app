@@ -2,7 +2,7 @@ actions:
   - name: login
     definition:
       kind: synchronous
-      handler: http://food_go_backend:8080/login
+      handler: https://food-recipe-appp.onrender.com/login
       forward_client_headers: true
     permissions:
       - role: user
@@ -11,9 +11,9 @@ actions:
   - name: signup
     definition:
       kind: synchronous
-      handler: http://food_go_backend:8080/signup
+      handler: https://food-recipe-appp.onrender.com/signup
       forward_client_headers: true
-    arguments:                # 👈 Add this block
+    arguments:
       - name: name
         type: String!
       - name: email
@@ -28,7 +28,7 @@ custom_types:
   input_objects: []
   objects:
     - name: SignupResponse
-      fields:                 # 👈 Define response fields
+      fields:
         - name: token
           type: String!
         - name: user_id
