@@ -1,21 +1,22 @@
+// server/api/login.post.ts
 import { defineEventHandler, readBody, createError } from 'h3'
 import { useRuntimeConfig } from '#imports'
 
 export default defineEventHandler(async (event) => {
   const body = await readBody(event)
 
-  if (!body.email || !body.password) {
-    throw createError({ statusCode: 400, statusMessage: 'Missing email or password' })
-  }
-
   const config = useRuntimeConfig()
   const backendUrl = config.public.backendUrl
 
+  if (!backendUrl) {
+    throw createError({ statusCode: 500, statusMessage: 'Backend URL not defined' })
+  }
+
   try {
-    // Send login payload directly
+    // ✅ wrap input just like signup
     const res = await $fetch(`${backendUrl}/login`, {
       method: 'POST',
-      body, // send top-level { email, password }
+      body: { input: body },
     })
 
     return res
@@ -23,7 +24,7 @@ export default defineEventHandler(async (event) => {
     console.error('Login API error:', error)
     throw createError({
       statusCode: 500,
-      statusMessage: error.message || 'Login failed',
+      statusMessage: 'Login failed',
     })
   }
 })
