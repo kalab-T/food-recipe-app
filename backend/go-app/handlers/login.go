@@ -1,132 +1,108 @@
-package handlers
+package auth
 
 import (
-	"bytes"
 	"encoding/json"
-	"io"
-	"log"
+	"fmt"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 
-	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
-
-	"go-app/auth"
 )
 
+var jwtSecret = []byte(os.Getenv("JWT_SECRET"))
+
+// LoginRequest defines the structure for login input
 type LoginRequest struct {
-	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required,min=8"`
+	Email    string `json:"email"`
+	Password string `json:"password"`
 }
 
-func LoginHandler(c *gin.Context) {
-	// 1. Read Hasura env
-	hasuraURL := os.Getenv("HASURA_URL")
-	hasuraAdminSecret := os.Getenv("HASURA_GRAPHQL_ADMIN_SECRET")
-	if hasuraURL == "" || hasuraAdminSecret == "" {
-		log.Println("❌ Hasura config missing")
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "Server configuration error"})
+// LoginResponse defines the structure for login response
+type LoginResponse struct {
+	Token string `json:"token"`
+}
+
+// HasuraUserQueryResponse represents the Hasura GraphQL response
+type HasuraUserQueryResponse struct {
+	Data struct {
+		Users []struct {
+			ID       string `json:"id"`
+			Email    string `json:"email"`
+			Password string `json:"password"`
+		} `json:"users"`
+	} `json:"data"`
+}
+
+// LoginHandler verifies user credentials and returns JWT
+func LoginHandler(w http.ResponseWriter, r *http.Request) {
+	var req LoginRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
 		return
 	}
 
-	// 2. Parse input
-	var payload struct {
-		Input LoginRequest `json:"input"`
-	}
-	if err := c.ShouldBindJSON(&payload); err != nil {
-		log.Printf("❌ Invalid login request: %v", err)
-		c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid input: " + err.Error()})
-		return
-	}
-	input := payload.Input
-	email := strings.ToLower(strings.TrimSpace(input.Email))
-	password := strings.TrimSpace(input.Password)
-
-	// 3. Hasura query to get user by email
+	// Prepare GraphQL query
 	query := `
-		query($email: String!) {
-			users(where: {email: {_eq: $email}}) {
-				id
-				name
-				password
-			}
+	query GetUserByEmail($email: String!) {
+		users(where: {email: {_eq: $email}}) {
+			id
+			email
+			password
 		}
-	`
+	}`
+	vars := map[string]interface{}{
+		"email": req.Email,
+	}
 
-	reqBody, _ := json.Marshal(map[string]interface{}{
-		"query":     query,
-		"variables": map[string]interface{}{"email": email},
-	})
-
-	req, _ := http.NewRequest("POST", hasuraURL, bytes.NewBuffer(reqBody))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-hasura-admin-secret", hasuraAdminSecret)
-
-	client := &http.Client{Timeout: 15 * time.Second}
-	resp, err := client.Do(req)
+	// Send request to Hasura
+	resp, err := sendHasuraRequest(query, vars)
 	if err != nil {
-		log.Printf("❌ Hasura connection failed: %v", err)
-		c.JSON(http.StatusServiceUnavailable, gin.H{"message": "Service unavailable"})
+		http.Error(w, fmt.Sprintf("Hasura request failed: %v", err), http.StatusInternalServerError)
 		return
 	}
 	defer resp.Body.Close()
 
-	bodyBytes, _ := io.ReadAll(resp.Body)
-	log.Printf("🔍 Hasura login response: %s", string(bodyBytes))
-
-	// 4. Parse response
-	var result struct {
-		Data struct {
-			Users []struct {
-				ID       string `json:"id"`
-				Name     string `json:"name"`
-				Password string `json:"password"`
-			} `json:"users"`
-		} `json:"data"`
-		Errors []struct {
-			Message string `json:"message"`
-		} `json:"errors"`
-	}
-
-	if err := json.Unmarshal(bodyBytes, &result); err != nil {
-		log.Printf("❌ Failed to parse Hasura response: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "Data processing error"})
+	var result HasuraUserQueryResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		http.Error(w, "Failed to decode response", http.StatusInternalServerError)
 		return
 	}
 
-	if len(result.Errors) > 0 {
-		log.Printf("❌ Hasura errors: %+v", result.Errors)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": result.Errors[0].Message})
-		return
-	}
-
+	// Check if user exists
 	if len(result.Data.Users) == 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{"message": "Invalid email or password"})
+		http.Error(w, "Invalid email or password", http.StatusUnauthorized)
 		return
 	}
 
 	user := result.Data.Users[0]
 
-	// 5. Verify password
-	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"message": "Invalid email or password"})
+	// Compare hashed password
+	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password)); err != nil {
+		http.Error(w, "Invalid email or password", http.StatusUnauthorized)
 		return
 	}
 
-	// 6. Generate JWT
-	token, err := auth.GenerateJWT(user.ID)
-	if err != nil {
-		log.Printf("❌ Failed to generate JWT: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "Could not generate token"})
-		return
-	}
-
-	// 7. Return response
-	c.JSON(http.StatusOK, gin.H{
-		"token":   token,
-		"user_id": user.ID,
-		"name":    user.Name,
+	// Generate JWT token
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"user_id":   user.ID,
+		"email":     user.Email,
+		"exp":       time.Now().Add(time.Hour * 72).Unix(),
+		"hasura_claims": map[string]interface{}{
+			"x-hasura-allowed-roles": []string{"user"},
+			"x-hasura-default-role":  "user",
+			"x-hasura-user-id":       user.ID,
+		},
 	})
+
+	tokenString, err := token.SignedString(jwtSecret)
+	if err != nil {
+		http.Error(w, "Failed to generate token", http.StatusInternalServerError)
+		return
+	}
+
+	// Send back response
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(LoginResponse{Token: tokenString})
 }
