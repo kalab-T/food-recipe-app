@@ -1,5 +1,5 @@
 export default defineEventHandler(async (event) => {
-  const body = await readBody(event)
+  const body = await readBody(event) as { name: string; email: string; password: string }
 
   const config = useRuntimeConfig()
   const backendUrl = config.public.backendUrl
@@ -7,7 +7,7 @@ export default defineEventHandler(async (event) => {
   try {
     const res = await $fetch(`${backendUrl}/signup`, {
       method: 'POST',
-      body: { input: body }, // wrap input for Go backend
+      body: { input: body }, // matches Go backend expectation
     })
 
     return res
