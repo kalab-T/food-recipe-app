@@ -18,31 +18,27 @@ export const useSignup = () => {
 
   const signup = async (name: string, email: string, password: string): Promise<SignupResult> => {
     try {
-      const res = await $fetch('/signup', {
+      const res = await $fetch('/api/signup', {
         method: 'POST',
-        body: { input: { name, email, password } }
+        body: { input: { name, email, password } },
       })
 
-      console.log('Signup response:', res)
+      console.log('Signup API raw response:', res)
 
-      // Ensure response has user_id and token
-      if (!res || typeof res !== 'object' || !('user_id' in res) || !('token' in res)) {
+      // Handle backend error response
+      if ('message' in res) {
+        return { success: false, error: res.message as string }
+      }
+
+      if (!('user_id' in res) || !('token' in res)) {
         return { success: false, error: 'Invalid response from server' }
       }
 
       const { user_id, token } = res as { user_id: string; token: string }
 
-      // Store token in composable & localStorage
+      // Store token in auth composable and localStorage
       setToken(token)
-      localStorage.setItem('token', token)
-
-      // Store user info
-      setUser({
-        id: user_id,
-        name,
-        email
-      })
-      localStorage.setItem('user', JSON.stringify({ id: user_id, name, email }))
+      setUser({ id: user_id, name, email })
 
       return { success: true }
     } catch (error: any) {
