@@ -50,14 +50,16 @@
 <script setup lang="ts">
 import { Form, Field, ErrorMessage } from 'vee-validate'
 import * as yup from 'yup'
-import { useRouter } from 'vue-router'
 import { ref, onMounted } from 'vue'
-import { useSignup } from '@/composables/useSignup'
+import { useRouter } from 'vue-router'
+import { useSignup } from '~/composables/useSignup'
 
 const router = useRouter()
 const isSubmitting = ref(false)
 const signupError = ref<string | null>(null)
+
 const schema = ref<yup.AnyObjectSchema>()
+const { signup } = useSignup()
 
 onMounted(() => {
   schema.value = yup.object({
@@ -71,16 +73,7 @@ onMounted(() => {
   })
 })
 
-const { signup } = useSignup()
-
-interface SignupFormValues {
-  name: string
-  email: string
-  password: string
-  confirmPassword: string
-}
-
-async function onSubmit(values: SignupFormValues) {
+async function onSubmit(values: any) {
   isSubmitting.value = true
   signupError.value = null
 
@@ -88,13 +81,15 @@ async function onSubmit(values: SignupFormValues) {
   const result = await signup(name, email, password)
 
   if (result.success) {
-    router.push('/login') // redirect after signup
+    router.push('/login')
   } else {
     signupError.value = result.error || 'Signup failed'
   }
+
+  isSubmitting.value = false
 }
 
-function submitHandler(handleSubmit: (onSubmit: (values: SignupFormValues) => Promise<void>) => (e?: Event) => Promise<void>) {
+function submitHandler(handleSubmit: (fn: (values: any) => Promise<void>) => (e?: Event) => Promise<void>) {
   return handleSubmit(onSubmit)
 }
 </script>
