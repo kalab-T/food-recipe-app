@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
@@ -22,6 +23,7 @@ type SignupRequest struct {
 }
 
 func SignupHandler(c *gin.Context) {
+	// 1️⃣ Read Hasura config from environment
 	hasuraURL := os.Getenv("HASURA_URL")
 	hasuraAdminSecret := os.Getenv("HASURA_GRAPHQL_ADMIN_SECRET")
 	if hasuraURL == "" || hasuraAdminSecret == "" {
@@ -30,6 +32,7 @@ func SignupHandler(c *gin.Context) {
 		return
 	}
 
+	// 2️⃣ Parse input
 	var payload struct {
 		Input SignupRequest `json:"input"`
 	}
@@ -43,7 +46,7 @@ func SignupHandler(c *gin.Context) {
 	input.Email = strings.ToLower(strings.TrimSpace(input.Email))
 	input.Password = strings.TrimSpace(input.Password)
 
-	// Hash the password
+	// 3️⃣ Hash password
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(input.Password), 12)
 	if err != nil {
 		log.Printf("❌ Password hashing failed: %v", err)
@@ -51,7 +54,7 @@ func SignupHandler(c *gin.Context) {
 		return
 	}
 
-	// Hasura mutation (using admin secret, no JWT required)
+	// 4️⃣ Prepare Hasura mutation
 	mutation := `
 		mutation($name: String!, $email: String!, $password: String!) {
 			insert_users_one(object: {name: $name, email: $email, password: $password}) {
@@ -73,7 +76,7 @@ func SignupHandler(c *gin.Context) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("x-hasura-admin-secret", hasuraAdminSecret)
 
-	client := &http.Client{}
+	client := &http.Client{Timeout: 15 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		log.Printf("❌ Hasura connection failed: %v", err)
@@ -93,6 +96,7 @@ func SignupHandler(c *gin.Context) {
 		return
 	}
 
+	// 5️⃣ Parse Hasura response
 	var result struct {
 		Data struct {
 			InsertUser struct {
@@ -111,7 +115,6 @@ func SignupHandler(c *gin.Context) {
 	}
 
 	if len(result.Errors) > 0 {
-		log.Printf("❌ Hasura errors: %+v", result.Errors)
 		errorMsg := result.Errors[0].Message
 		if strings.Contains(strings.ToLower(errorMsg), "duplicate") || strings.Contains(strings.ToLower(errorMsg), "already exists") {
 			errorMsg = "Email already registered"
@@ -120,7 +123,7 @@ func SignupHandler(c *gin.Context) {
 		return
 	}
 
-	// ✅ Generate JWT for the new user
+	// 6️⃣ Generate token for this user (so frontend can store it)
 	token, err := auth.GenerateJWT(result.Data.InsertUser.ID)
 	if err != nil {
 		log.Printf("❌ Failed to generate token: %v", err)
@@ -128,9 +131,9 @@ func SignupHandler(c *gin.Context) {
 		return
 	}
 
-	// Return both user_id and token
+	// 7️⃣ Return JSON response with token & user ID
 	c.JSON(http.StatusOK, gin.H{
-		"user_id": result.Data.InsertUser.ID,
 		"token":   token,
+		"user_id": result.Data.InsertUser.ID,
 	})
 }
